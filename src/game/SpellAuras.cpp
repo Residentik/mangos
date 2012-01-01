@@ -6583,8 +6583,7 @@ void Aura::HandlePeriodicDamage(bool apply, bool Real)
                     if (SpellAuraHolderPtr holder = pCaster->GetSpellAuraHolder(GetId()))
                     {
                         GetHolder()->SetAuraDuration(holder->GetAuraDuration());
-                        GetHolder()->RefreshHolder();
-                        pCaster->RemoveAurasDueToSpell(GetId());
+                        GetHolder()->SendAuraUpdate(false);
                     }
                 }
             }

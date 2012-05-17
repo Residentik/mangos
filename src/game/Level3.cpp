@@ -352,6 +352,7 @@ bool ChatHandler::HandleReloadAllGossipsCommand(char* args)
 bool ChatHandler::HandleReloadAllItemCommand(char* /*args*/)
 {
     HandleReloadPageTextsCommand((char*)"a");
+    HandleReloadItemTemplateCommand((char*)"a");
     HandleReloadItemConvertCommand((char*)"a");
     HandleReloadItemEnchantementsCommand((char*)"a");
     HandleReloadItemRequiredTragetCommand((char*)"a");
@@ -821,6 +822,14 @@ bool ChatHandler::HandleReloadPageTextsCommand(char* /*args*/)
     sLog.outString( "Re-Loading Page Texts..." );
     sObjectMgr.LoadPageTexts();
     SendGlobalSysMessage("DB table `page_texts` reloaded.");
+    return true;
+}
+
+bool ChatHandler::HandleReloadItemTemplateCommand(char* /*arg*/)
+{
+    sLog.outString( "Re-Loading `item_template` table...");
+    sObjectMgr.LoadItemPrototypes();
+    SendGlobalSysMessage("DB table `item_template` reloaded.");
     return true;
 }
 

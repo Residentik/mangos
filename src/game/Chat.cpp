@@ -270,6 +270,11 @@ ChatCommand * ChatHandler::getCommandTable()
         { NULL,             0,                  false, NULL,                                                "", NULL }
     };
 
+    static ChatCommand spellCommandTable[] =
+        { "disable"            SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleSpellDisableCommand,        "", NULL },
+        { NULL,             0,                  false, NULL,                                           "", NULL }
+    };
+
     static ChatCommand eventCommandTable[] =
     {
         { "list",           SEC_GAMEMASTER,     true,  &ChatHandler::HandleEventListCommand,           "", NULL },

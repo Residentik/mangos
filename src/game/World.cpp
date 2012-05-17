@@ -1937,6 +1937,11 @@ void World::SendZoneText(uint32 zone, const char* text, WorldSession *self, uint
     SendZoneMessage(zone, &data, self,team);
 }
 
+bool World::DisableSpell(uint32 spell)
+{
+WorldDatabase.PExecute("INSERT INTO spell_disabled VALUES ('%u','0','1')",spell)
+}
+
 /// Kick (and save) all players
 void World::KickAll()
 {

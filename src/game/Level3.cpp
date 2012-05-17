@@ -1150,6 +1150,27 @@ bool ChatHandler::HandleLoadScriptsCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleSpellDisableCommand(char* args)
+{
+    if(!*args)
+       return false;
+
+    uint32 spell = ExtractSpellIdFromLink(&args);
+    if (!spell)
+        return false;
+
+    sWorld.DisableSpell(spell);
+
+    sLog.outString( "Re-Loading spell disabled table...");
+    sLog.outString( "Spell %u is disabled now.",spell);
+
+    sObjectMgr.LoadSpellDisabledEntrys();
+
+    SendGlobalSysMessage("DB table `spell_disabled` reloaded. ")
+
+   return true;
+}
+
 bool ChatHandler::HandleAccountSetGmLevelCommand(char* args)
 {
     char* accountStr = ExtractOptNotLastArg(&args);

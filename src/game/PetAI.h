@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
- * Copyright (C) 2011-2012 /dev/rsa for MangosR2 <http://github.com/MangosR2>
+ * Copyright (C) 2011-2013 /dev/rsa for MangosR2 <http://github.com/MangosR2>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,6 +55,11 @@ enum PetAutoSpellType
     PET_SPELL_MAX
 };
 
+enum
+{
+    ALLIES_UPDATE_TIME = 10*IN_MILLISECONDS,
+};
+
 class MANGOS_DLL_DECL PetAI : public CreatureAI
 {
     public:
@@ -66,7 +71,7 @@ class MANGOS_DLL_DECL PetAI : public CreatureAI
         void MoveInLineOfSight(Unit *);
         void AttackStart(Unit *);
         void EnterEvadeMode();
-        void AttackedBy(Unit*);
+        void AttackedBy(Unit*) override;
         bool IsVisible(Unit *) const;
 
         void UpdateAI(const uint32);
@@ -76,7 +81,10 @@ class MANGOS_DLL_DECL PetAI : public CreatureAI
         void MoveToVictim(Unit* unit);
         bool IsInCombat();
 
-        ObjectGuidSet const& GetAllyGuids() { return m_AllySet; };
+        GuidSet const& GetAllyGuids() { return m_AllySet; };
+
+        bool  SetPrimaryTarget(ObjectGuid const& guid);
+        Unit* GetPrimaryTarget();
 
     private:
         bool _isVisible(Unit *) const;
@@ -87,16 +95,17 @@ class MANGOS_DLL_DECL PetAI : public CreatureAI
         SpellCastResult CanAutoCast(Unit* target, SpellEntry const* spellInfo);
         uint32 GetSpellType(PetAutoSpellType type);
 
-        TimeTracker i_tracker;
         bool inCombat;
 
-        ObjectGuidSet m_AllySet;
-        uint32 m_updateAlliesTimer;
+        GuidSet m_AllySet;
+        ObjectGuid m_primaryTargetGuid;
+
+        IntervalTimer   m_updateAlliesTimer;
+        IntervalTimer   m_attackDistanceRecheckTimer;
 
         PetAIType       m_AIType;
         PetAIType       m_savedAIType;
-        float           attackDistance;
-        uint32          m_attackDistanceRecheckTimer;
+        float           m_attackDistance;
         ObjectGuid      m_savedTargetGuid;
         Unit::SpellIdSet      m_spellType[PET_SPELL_MAX]; //Classified autospell storage
 };

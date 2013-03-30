@@ -22,11 +22,10 @@
 #ifndef LOCKEDVECTOR_H
 #define LOCKEDVECTOR_H
 
-#include <ace/RW_Thread_Mutex.h>
+#include "Common.h"
 #include <vector>
 #include <list>
 #include <assert.h>
-#include "Errors.h"
 
 namespace ACE_Based
 {
@@ -35,7 +34,7 @@ namespace ACE_Based
     {
         public:
 
-        typedef   ACE_RW_Thread_Mutex          LockType;
+        typedef   MANGOSR2_MUTEX_MODEL         LockType;
         typedef   ACE_Read_Guard<LockType>     ReadGuard;
         typedef   ACE_Write_Guard<LockType>    WriteGuard;
 
@@ -100,10 +99,10 @@ namespace ACE_Based
                 m_storage.erase(m_storage.begin() + pos);
             }
 
-            void erase(iterator itr)
+            iterator erase(iterator itr)
             {
                 WriteGuard Guard(GetLock());
-                m_storage.erase(itr);
+                return m_storage.erase(itr);
             }
 
             void remove(const T& item)

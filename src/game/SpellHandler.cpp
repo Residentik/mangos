@@ -392,7 +392,7 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
         mover = _mover;
 
     // casting own spells on some vehicles
-    if (mover->GetObjectGuid().IsVehicle() && mover->GetCharmerOrOwnerPlayerOrPlayerItself())
+    if (mover->IsVehicle() && mover->GetCharmerOrOwnerPlayerOrPlayerItself())
     {
         Player *plr = mover->GetCharmerOrOwnerPlayerOrPlayerItself();
         if (mover->GetVehicleKit()->GetSeatInfo(plr) &&
@@ -403,7 +403,7 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
 
     bool triggered = false;
     SpellEntry const* triggeredBy = NULL;
-    Aura* triggeredByAura = mover->GetTriggeredByClientAura(spellId);
+    Aura const* triggeredByAura = mover->GetTriggeredByClientAura(spellId);
     if (triggeredByAura)
     {
         triggered = true;
@@ -579,7 +579,7 @@ void WorldSession::HandlePetCancelAuraOpcode( WorldPacket& recvPacket)
 
     pet->RemoveAurasDueToSpell(spellId);
 
-    pet->AddCreatureSpellCooldown(spellId);
+    pet->AddSpellAndCategoryCooldowns(spellInfo);
 }
 
 void WorldSession::HandleCancelGrowthAuraOpcode( WorldPacket& /*recvPacket*/)
@@ -647,11 +647,11 @@ void WorldSession::HandleSpellClick( WorldPacket & recv_data )
     ObjectGuid guid;
     recv_data >> guid;
 
-    Creature *unit = _player->GetMap()->GetAnyTypeCreature(guid);
+    Creature* unit = _player->GetMap()->GetAnyTypeCreature(guid);
     if (!unit)
         return;
 
-    if (_player->isInCombat() && !guid.IsVehicle())                              // client prevent click and set different icon at combat state
+    if (_player->isInCombat() && !unit->IsVehicle())                              // client prevent click and set different icon at combat state
         return;
 
     SpellClickInfoMapBounds clickPair = sObjectMgr.GetSpellClickInfoMapBounds(unit->GetEntry());
@@ -713,7 +713,6 @@ void WorldSession::HandleUpdateProjectilePosition(WorldPacket& recvPacket)
 
 void WorldSession::HandleGetMirrorimageData(WorldPacket& recv_data)
 {
-    DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "WORLD: CMSG_GET_MIRRORIMAGE_DATA");
 
     ObjectGuid guid;
     recv_data >> guid;
@@ -730,11 +729,16 @@ void WorldSession::HandleGetMirrorimageData(WorldPacket& recv_data)
 
     Unit* pCaster = images.front()->GetCaster();
 
+    DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "WorldSession::HandleGetMirrorimageData CMSG_GET_MIRRORIMAGE_DATA creature %s aura %u caster %s",
+        guid.GetString().c_str(),
+        images.front()->GetId(),
+        pCaster ? pCaster->GetObjectGuid().GetString().c_str() : "<none>");
+
     WorldPacket data(SMSG_MIRRORIMAGE_DATA, 68);
 
     data << guid;
-    data << (uint32)pCreature->GetDisplayId();
 
+    data << (uint32)pCreature->GetDisplayId();
     data << (uint8)pCreature->getRace();
     data << (uint8)pCreature->getGender();
     data << (uint8)pCreature->getClass();
@@ -795,4 +799,58 @@ void WorldSession::HandleGetMirrorimageData(WorldPacket& recv_data)
     }
 
     SendPacket(&data);
+}
+
+void WorldSession::HandleUpdateMissileTrajectory(WorldPacket& recv_data)
+{
+    DEBUG_LOG("WORLD: CMSG_UPDATE_MISSILE_TRAJECTORY");
+
+    ObjectGuid guid;
+    uint32 spellId;
+    float elevation, speed;
+    WorldLocation src = GetPlayer()->GetPosition();
+    WorldLocation dst = GetPlayer()->GetPosition();
+    uint8 moveFlag;
+
+    recv_data >> guid;
+
+//    if (!guid.IsPlayer())
+//        return;
+
+    recv_data >> spellId;
+    recv_data >> elevation;
+    recv_data >> speed;
+    recv_data >> src.x >> src.y >> src.z;
+    recv_data >> dst.x >> dst.y >> dst.z;
+    recv_data >> moveFlag;
+
+    Unit* unit = ObjectAccessor::GetUnit(*GetPlayer(), guid);
+    if (!unit)
+        return;
+
+    Spell* spell = unit ? unit->GetCurrentSpell(CURRENT_GENERIC_SPELL) : NULL;
+    if (!spell || spell->m_spellInfo->Id != spellId || !(spell->m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION))
+    {
+        return;
+    }
+    DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "WorldSession::HandleUpdateMissileTrajectory spell %u ajusted coords: src %f/%f %f/%f %f/%f dst %f/%f %f/%f %f/%f speed %f/%f elevation %f/%f",
+        spellId,
+        spell->m_targets.getSource().x, src.x, spell->m_targets.getSource().y, src.y, spell->m_targets.getSource().z, src.z,
+        spell->m_targets.getDestination().x, dst.x, spell->m_targets.getDestination().y, dst.y, spell->m_targets.getDestination().z, dst.z,
+        spell->m_targets.GetSpeed(), speed, spell->m_targets.GetElevation(), elevation);
+
+    spell->m_targets.setSource(src);
+    spell->m_targets.setDestination(dst);
+    spell->m_targets.SetElevation(elevation);
+    spell->m_targets.SetSpeed(speed);
+
+    if (moveFlag)
+    {
+        ObjectGuid guid2;                               // unk guid (possible - active mover) - unused
+        MovementInfo movementInfo;                      // MovementInfo
+
+        recv_data >> Unused<uint32>();                  // >> MSG_MOVE_STOP
+        recv_data >> guid.ReadAsPacked();
+        recv_data >> movementInfo;
+    }
 }

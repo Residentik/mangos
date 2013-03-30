@@ -37,8 +37,8 @@
 #include <zlib/zlib.h>
 #include "ObjectAccessor.h"
 #include "Object.h"
-#include "BattleGround.h"
-#include "WorldPvP/WorldPvP.h"
+#include "BattleGround/BattleGround.h"
+#include "OutdoorPvP/OutdoorPvP.h"
 #include "Pet.h"
 #include "SocialMgr.h"
 #include "DBCEnums.h"
@@ -293,14 +293,11 @@ void WorldSession::HandleLogoutRequestOpcode( WorldPacket & /*recv_data*/ )
     // not set flags if player can't free move to prevent lost state at logout cancel
     if(GetPlayer()->CanFreeMove())
     {
-        float height = GetPlayer()->GetTerrain()->GetHeight(GetPlayer()->GetPositionX(), GetPlayer()->GetPositionY(), GetPlayer()->GetPositionZ());
+        float height = GetPlayer()->GetMap()->GetHeight(GetPlayer()->GetPhaseMask(), GetPlayer()->GetPositionX(), GetPlayer()->GetPositionY(), GetPlayer()->GetPositionZ());
         if ((GetPlayer()->GetPositionZ() < height + 0.1f) && !(GetPlayer()->IsInWater()))
             GetPlayer()->SetStandState(UNIT_STAND_STATE_SIT);
 
-        WorldPacket data( SMSG_FORCE_MOVE_ROOT, (8+4) );    // guess size
-        data << GetPlayer()->GetPackGUID();
-        data << (uint32)2;
-        SendPacket( &data );
+        GetPlayer()->SetRoot(true);
         GetPlayer()->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_STUNNED);
     }
 
@@ -329,10 +326,7 @@ void WorldSession::HandleLogoutCancelOpcode( WorldPacket & /*recv_data*/ )
     if(GetPlayer()->CanFreeMove())
     {
         //!we can move again
-        data.Initialize( SMSG_FORCE_MOVE_UNROOT, 8 );       // guess size
-        data << GetPlayer()->GetPackGUID();
-        data << uint32(0);
-        SendPacket( &data );
+        GetPlayer()->SetRoot(false);
 
         //! Stand Up
         GetPlayer()->SetStandState(UNIT_STAND_STATE_STAND);
@@ -738,16 +732,14 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket & recv_data)
         return;
     }
 
-    if (pl->InBattleGround())
+    if (BattleGround* bg = pl->GetBattleGround())
     {
-        if (BattleGround* bg = pl->GetBattleGround())
-            bg->HandleAreaTrigger(pl, Trigger_ID);
+        bg->HandleAreaTrigger(pl, Trigger_ID);
         return;
     }
-
-    if(WorldPvP* pOutdoorBg = GetPlayer()->GetWorldPvP())
+    else if (OutdoorPvP* outdoorPvP = sOutdoorPvPMgr.GetScript(pl->GetCachedZoneId()))
     {
-        if (pOutdoorBg->HandleAreaTrigger(pl, Trigger_ID))
+        if (outdoorPvP->HandleAreaTrigger(pl, Trigger_ID))
             return;
     }
 
@@ -756,12 +748,12 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket & recv_data)
     if (!at)
         return;
 
-    MapEntry const* targetMapEntry = sMapStore.LookupEntry(at->target_mapId);
+    MapEntry const* targetMapEntry = sMapStore.LookupEntry(at->loc.GetMapId());
     if (!targetMapEntry)
         return;
 
     if (GetPlayer()->CheckTransferPossibility(at))
-        GetPlayer()->TeleportTo(at->target_mapId, at->target_X, at->target_Y, at->target_Z, at->target_Orientation, TELE_TO_NOT_LEAVE_TRANSPORT|TELE_TO_CHECKED);
+        GetPlayer()->TeleportTo(at->loc.GetMapId(), at->loc.x, at->loc.y, at->loc.z, at->loc.orientation, TELE_TO_NOT_LEAVE_TRANSPORT|TELE_TO_CHECKED);
 }
 
 void WorldSession::HandleUpdateAccountData(WorldPacket &recv_data)
@@ -1231,25 +1223,35 @@ void WorldSession::HandleRealmSplitOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleFarSightOpcode( WorldPacket & recv_data )
 {
-    DEBUG_LOG("WORLD: CMSG_FAR_SIGHT");
-    //recv_data.hexlike();
-
     uint8 op;
     recv_data >> op;
-
-    WorldObject* obj = _player->GetMap()->GetWorldObject(_player->GetFarSightGuid());
-    if (!obj)
-        return;
 
     switch(op)
     {
         case 0:
-            DEBUG_LOG("Removed FarSight from %s", _player->GetGuidStr().c_str());
-            _player->GetCamera().ResetView(false);
+            DEBUG_LOG("WorldSession: CMSG_FAR_SIGHT removed FarSight from %s", GetPlayer()->GetGuidStr().c_str());
+            GetPlayer()->SetViewPoint(NULL, false, false);
             break;
         case 1:
-            DEBUG_LOG("Added FarSight %s to %s", _player->GetFarSightGuid().GetString().c_str(), _player->GetGuidStr().c_str());
-            _player->GetCamera().SetView(obj, false);
+            {
+                if (GetPlayer()->GetFarSightGuid().IsEmpty())
+                {
+                    sLog.outError("WorldSession: CMSG_FAR_SIGHT try add FarSight to %s, but ViewPoint guid is empty!", GetPlayer()->GetGuidStr().c_str());
+                    return;
+                }
+                WorldObject* obj = GetPlayer()->GetMap()->GetWorldObject(GetPlayer()->GetFarSightGuid());
+                if (!obj || !obj->IsInWorld())
+                {
+                    sLog.outError("WorldSession: CMSG_FAR_SIGHT try added FarSight %s to %s, but ViewPoint absent or not in world!", GetPlayer()->GetFarSightGuid().GetString().c_str(), GetPlayer()->GetGuidStr().c_str());
+                    GetPlayer()->SetGuidValue(PLAYER_FARSIGHT, ObjectGuid());
+                    return;
+                }
+                DEBUG_LOG("WorldSession: CMSG_FAR_SIGHT added FarSight %s to %s", GetPlayer()->GetFarSightGuid().GetString().c_str(), GetPlayer()->GetGuidStr().c_str());
+                GetPlayer()->SetViewPoint(obj, true, false);
+                break;
+            }
+        default:
+            sLog.outError("WorldSession: CMSG_FAR_SIGHT unknown command %u for player %s", op, GetPlayer()->GetGuidStr().c_str());
             break;
     }
 }
@@ -1468,7 +1470,8 @@ void WorldSession::HandleQueryInspectAchievementsOpcode( WorldPacket & recv_data
 
     recv_data >> guid.ReadAsPacked();
 
-    if(Player *player = sObjectMgr.GetPlayer(guid))
+    Player* player = sObjectMgr.GetPlayer(guid);
+    if(player)
         player->GetAchievementMgr().SendRespondInspectAchievements(_player);
 }
 

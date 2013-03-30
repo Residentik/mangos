@@ -40,7 +40,6 @@ class Quest;
 class SpellCastTargets;
 class Unit;
 class WorldObject;
-struct SpellEntry;
 
 enum ScriptCommand                                          // resSource, resTarget are the resulting Source/ Target after buddy search is done
 {
@@ -67,11 +66,12 @@ enum ScriptCommand                                          // resSource, resTar
     SCRIPT_COMMAND_CAST_SPELL               = 15,           // resSource = Unit, cast spell at resTarget = Unit
                                                             // datalong=spellid
                                                             // data_flags &  SCRIPT_FLAG_COMMAND_ADDITIONAL = cast triggered
-    SCRIPT_COMMAND_PLAY_SOUND               = 16,           // resSource = WorldObject, target=any/player, datalong (sound_id), datalong2 (bitmask: 0/1=anyone/target, 0/2=with distance dependent, so 1|2 = 3 is target with distance dependent)
+    SCRIPT_COMMAND_PLAY_SOUND               = 16,           // resSource = WorldObject, target=any/player, datalong (sound_id), datalong2 (bitmask: 0/1=target-player, 0/2=with distance dependent, 0/4=map wide, 0/8=zone wide; so 1|2 = 3 is target with distance dependent)
     SCRIPT_COMMAND_CREATE_ITEM              = 17,           // source or target must be player, datalong = item entry, datalong2 = amount
     SCRIPT_COMMAND_DESPAWN_SELF             = 18,           // resSource = Creature, datalong = despawn delay
     SCRIPT_COMMAND_PLAY_MOVIE               = 19,           // target can only be a player, datalog = movie id
-    SCRIPT_COMMAND_MOVEMENT                 = 20,           // resSource = Creature. datalong = MovementType (0:idle, 1:random or 2:waypoint)
+    SCRIPT_COMMAND_MOVEMENT                 = 20,           // resSource = Creature. datalong = MovementType (0:idle, 1:random or 2:waypoint), datalong2 = wander-distance
+                                                            // data_flags &  SCRIPT_FLAG_COMMAND_ADDITIONAL = Random-movement around current position
     SCRIPT_COMMAND_SET_ACTIVEOBJECT         = 21,           // resSource = Creature
                                                             // datalong=bool 0=off, 1=on
     SCRIPT_COMMAND_SET_FACTION              = 22,           // resSource = Creature
@@ -91,6 +91,15 @@ enum ScriptCommand                                          // resSource, resTar
                                                             // datalong=NPCFlags
                                                             // datalong2:0x00=toggle, 0x01=add, 0x02=remove
     SCRIPT_COMMAND_SEND_TAXI_PATH           = 30,           // datalong = taxi path id (source or target must be player)
+    SCRIPT_COMMAND_TERMINATE_SCRIPT         = 31,           // datalong = search for npc entry if provided
+                                                            // datalong2= search distance
+                                                            // data_flags & SCRIPT_FLAG_COMMAND_ADDITIONAL: terminate steps of this script if npc found
+                                                            //                                        ELSE: terminate steps of this script if npc not found
+                                                            // dataint=diff to change a waittime of current Waypoint Movement
+    SCRIPT_COMMAND_PAUSE_WAYPOINTS          = 32,           // resSource = Creature
+                                                            // datalong = 0: unpause waypoint 1: pause waypoint
+    SCRIPT_COMMAND_XP_USER                  = 33,           // source or target with Player, datalong = bool (0=off, 1=on)
+
 };
 
 #define MAX_TEXT_ID 4                                       // used for SCRIPT_COMMAND_TALK
@@ -229,7 +238,7 @@ struct ScriptInfo
         struct                                              // SCRIPT_COMMAND_MOVEMENT (20)
         {
             uint32 movementType;                            // datalong
-            uint32 empty;                                   // datalong2
+            uint32 wanderDistance;                          // datalong2
         } movement;
 
         struct                                              // SCRIPT_COMMAND_SET_ACTIVEOBJECT (21)
@@ -286,11 +295,30 @@ struct ScriptInfo
             uint32 change_flag;                             // datalong2
         } npcFlag;
 
-        struct
+        struct                                              // SCRIPT_COMMAND_SEND_TAXI_PATH (30)
         {
             uint32 taxiPathId;                              // datalong
             uint32 empty;
         } sendTaxiPath;
+
+        struct                                              // SCRIPT_COMMAND_TERMINATE_SCRIPT (31)
+        {
+            uint32 npcEntry;                                // datalong
+            uint32 searchDist;                              // datalong2
+            // changeWaypointWaitTime                       // dataint
+        } terminateScript;
+
+        struct                                              // SCRIPT_COMMAND_PAUSE_WAYPOINTS (32)
+        {
+            uint32 doPause;                                 // datalong
+            uint32 empty;
+        } pauseWaypoint;
+
+        struct                                              // SCRIPT_COMMAND_XP_USER (33)
+        {
+            uint32 flags;                                   // datalong
+            uint32 empty;                                   // datalong2
+        } xpDisabled;
 
         struct
         {
@@ -347,8 +375,10 @@ struct ScriptInfo
             case SCRIPT_COMMAND_MOVE_TO:
             case SCRIPT_COMMAND_TEMP_SUMMON_CREATURE:
             case SCRIPT_COMMAND_CAST_SPELL:
+            case SCRIPT_COMMAND_MOVEMENT:
             case SCRIPT_COMMAND_MORPH_TO_ENTRY_OR_MODEL:
             case SCRIPT_COMMAND_MOUNT_TO_ENTRY_OR_MODEL:
+            case SCRIPT_COMMAND_TERMINATE_SCRIPT:
                 return true;
             default:
                 return false;
@@ -363,15 +393,29 @@ class ScriptAction
             m_table(_table), m_map(_map), m_sourceGuid(_sourceGuid), m_targetGuid(_targetGuid), m_ownerGuid(_ownerGuid), m_script(_script)
         {}
 
-        void HandleScriptStep();
+        bool HandleScriptStep();                            // return true IF AND ONLY IF the script should be terminated
+
+        const char* GetTableName() const { return m_table; }
+        uint32 GetId() const { return m_script->id; }
+        ObjectGuid GetSourceGuid() const { return m_sourceGuid; }
+        ObjectGuid GetTargetGuid() const { return m_targetGuid; }
+        ObjectGuid GetOwnerGuid() const { return m_ownerGuid; }
+
+        bool IsSameScript(const char* table, uint32 id, ObjectGuid sourceGuid, ObjectGuid targetGuid, ObjectGuid ownerGuid) const
+        {
+            return table == m_table && id == GetId() &&
+                (sourceGuid == m_sourceGuid || !sourceGuid) &&
+                (targetGuid == m_targetGuid || !targetGuid) &&
+                (ownerGuid == m_ownerGuid || !ownerGuid);
+        }
 
     private:
+        const char* m_table;                                // of which table the script was started
+        Map* m_map;                                         // Map on which the action will be executed
         ObjectGuid m_sourceGuid;
         ObjectGuid m_targetGuid;
         ObjectGuid m_ownerGuid;                             // owner of source if source is item
-        const char* m_table;                                // of which table the script was started
         ScriptInfo const* m_script;                         // pointer to static script data
-        Map* m_map;                                         // Map on which the action will be executed
 
         // Helper functions
         bool GetScriptCommandObject(const ObjectGuid guid, bool includeItem, Object*& resultObject);
@@ -393,6 +437,7 @@ extern ScriptMapMapName sGameObjectScripts;
 extern ScriptMapMapName sGameObjectTemplateScripts;
 extern ScriptMapMapName sEventScripts;
 extern ScriptMapMapName sGossipScripts;
+extern ScriptMapMapName sCreatureDeathScripts;
 extern ScriptMapMapName sCreatureMovementScripts;
 
 enum ScriptLoadResult
@@ -416,6 +461,7 @@ class ScriptMgr
         void LoadEventScripts();
         void LoadSpellScripts();
         void LoadGossipScripts();
+        void LoadCreatureDeathScripts();
         void LoadCreatureMovementScripts();
 
         void LoadDbScriptStrings();
@@ -464,9 +510,11 @@ class ScriptMgr
         bool OnEffectDummy(Unit* pCaster, uint32 spellId, SpellEffectIndex effIndex, Creature* pTarget);
         bool OnEffectDummy(Unit* pCaster, uint32 spellId, SpellEffectIndex effIndex, GameObject* pTarget);
         bool OnEffectDummy(Unit* pCaster, uint32 spellId, SpellEffectIndex effIndex, Item* pTarget);
+        bool OnEffectScriptEffect(Unit* pCaster, uint32 spellId, SpellEffectIndex effIndex, Creature* pTarget);
         bool OnAuraDummy(Aura const* pAura, bool apply);
 
     private:
+        void CollectPossibleEventIds(std::set<uint32>& eventIds);
         void LoadScripts(ScriptMapMapName& scripts, const char* tablename);
         void CheckScriptTexts(ScriptMapMapName const& scripts, std::set<int32>& ids);
 
@@ -516,8 +564,12 @@ class ScriptMgr
         bool (MANGOS_IMPORT* m_pOnEffectDummyCreature) (Unit*, uint32, SpellEffectIndex, Creature*);
         bool (MANGOS_IMPORT* m_pOnEffectDummyGO) (Unit*, uint32, SpellEffectIndex, GameObject*);
         bool (MANGOS_IMPORT* m_pOnEffectDummyItem) (Unit*, uint32, SpellEffectIndex, Item*);
+        bool (MANGOS_IMPORT* m_pOnEffectScriptEffectCreature)(Unit*, uint32, SpellEffectIndex, Creature*);
         bool (MANGOS_IMPORT* m_pOnAuraDummy) (Aura const*, bool);
 };
+
+// Starters for events
+bool StartEvents_Event(Map* map, uint32 id, Object* source, Object* target, bool isStart = true, Unit* forwardToPvp = NULL);
 
 #define sScriptMgr MaNGOS::Singleton<ScriptMgr>::Instance()
 

@@ -33,7 +33,7 @@
 #include "Guild.h"
 #include "GuildMgr.h"
 #include "World.h"
-#include "BattleGroundMgr.h"
+#include "BattleGround/BattleGroundMgr.h"
 #include "MapManager.h"
 #include "SocialMgr.h"
 #include "LFGMgr.h"
@@ -419,9 +419,9 @@ void WorldSession::LogoutPlayer(bool Save)
 
             // build set of player who attack _player or who have pet attacking of _player
             std::set<Player*> aset;
-            ObjectGuidSet attackers = GetPlayer()->GetMap()->GetAttackersFor(GetPlayer()->GetObjectGuid());
+            GuidSet& attackers = GetPlayer()->GetMap()->GetAttackersFor(GetPlayer()->GetObjectGuid());
 
-            for (ObjectGuidSet::const_iterator itr = attackers.begin(); itr != attackers.end();)
+            for (GuidSet::const_iterator itr = attackers.begin(); itr != attackers.end();)
             {
                 Unit* attacker = GetPlayer()->GetMap()->GetUnit(*itr++);
                 if (!attacker)
@@ -506,7 +506,8 @@ void WorldSession::LogoutPlayer(bool Save)
         }
 
         ///- If the player is in a guild, update the guild roster and broadcast a logout message to other guild members
-        if (Guild* guild = sGuildMgr.GetGuildById(GetPlayer()->GetGuildId()))
+        Guild* guild = sGuildMgr.GetGuildById(GetPlayer()->GetGuildId());
+        if (guild)
         {
             if (MemberSlot* slot = guild->GetMemberSlot(GetPlayer()->GetObjectGuid()))
             {
@@ -521,6 +522,9 @@ void WorldSession::LogoutPlayer(bool Save)
         GetPlayer()->RemovePet(PET_SAVE_AS_CURRENT);
 
         GetPlayer()->InterruptNonMeleeSpells(true);
+
+        if (VehicleKitPtr vehicle = GetPlayer()->GetVehicle())
+            GetPlayer()->ExitVehicle();
 
         ///- empty buyback items and save the player in the database
         // some save parts only correctly work in case player present in map/player_lists (pets, etc)
@@ -547,7 +551,7 @@ void WorldSession::LogoutPlayer(bool Save)
 
         ///- Broadcast a logout message to the player's friends
         sSocialMgr.SendFriendStatus(GetPlayer(), FRIEND_OFFLINE, GetPlayer()->GetObjectGuid(), true);
-        sSocialMgr.RemovePlayerSocial (GetPlayer()->GetGUIDLow ());
+        sSocialMgr.RemovePlayerSocial(GetPlayer()->GetObjectGuid());
 
         // Playerbot - remember player GUID for update SQL below
         uint32 guid = GetPlayer()->GetGUIDLow();
@@ -883,6 +887,23 @@ void WorldSession::SaveTutorialsData()
     m_tutorialState = TUTORIALDATA_UNCHANGED;
 }
 
+// Send chat information about aborted transfer (mostly used by Player::SendTransferAbortedByLockstatus())
+void WorldSession::SendTransferAborted(uint32 mapid, uint8 reason, uint8 arg)
+{
+    WorldPacket data(SMSG_TRANSFER_ABORTED, 4 + 2);
+    data << uint32(mapid);
+    data << uint8(reason);                                  // transfer abort reason
+    switch (reason)
+    {
+        case TRANSFER_ABORT_INSUF_EXPAN_LVL:
+        case TRANSFER_ABORT_DIFFICULTY:
+        case TRANSFER_ABORT_UNIQUE_MESSAGE:
+            data << uint8(arg);
+            break;
+    }
+    SendPacket(&data);
+}
+
 void WorldSession::ReadAddonsInfo(WorldPacket &data)
 {
     if (data.rpos() + 4 > data.size())
@@ -1024,9 +1045,9 @@ void WorldSession::SendRedirectClient(std::string& ip, uint16 port)
     pkt << uint32(ip2);                                     // inet_addr(ipstr)
     pkt << uint16(port);                                    // port
 
-    pkt << uint32(GetLatency());                            // latency-related?
+    pkt << uint32(0);                                       // unknown
 
-    HMACSHA1 sha1(20, m_Socket->GetSessionKey().AsByteArray());
+    HMACSHA1 sha1(40, m_Socket->GetSessionKey().AsByteArray());
     sha1.UpdateData((uint8*)&ip2, 4);
     sha1.UpdateData((uint8*)&port, 2);
     sha1.Finalize();
@@ -1052,7 +1073,7 @@ void WorldSession::ExecuteOpcode( OpcodeHandler const& opHandle, WorldPacket* pa
         //we should execute delayed teleports only for alive(!) players
         //because we don't want player's ghost teleported from graveyard
         if (_player->IsHasDelayedTeleport())
-            _player->TeleportTo(_player->m_teleport_dest, _player->m_teleport_options);
+            _player->TeleportTo(_player->m_teleport_dest, _player->m_teleport_options | TELE_TO_NODELAY);
     }
 
     if (packet->rpos() < packet->wpos() && sLog.HasLogLevelOrHigher(LOG_LVL_DEBUG))
@@ -1070,4 +1091,12 @@ void WorldSession::InitWarden(BigNumber *K, std::string os)
         m_Warden = (WardenBase*)new WardenMac();
 
     m_Warden->Init(this, K);
+}
+
+void WorldSession::SendPlaySpellVisual(ObjectGuid guid, uint32 spellArtKit)
+{
+    WorldPacket data(SMSG_PLAY_SPELL_VISUAL, 8+4);          // visual effect on guid
+    data << guid;
+    data << spellArtKit;                                    // index from SpellVisualKit.dbc
+    SendPacket(&data);
 }

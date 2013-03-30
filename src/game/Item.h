@@ -229,7 +229,7 @@ enum ItemDynFlags
     ITEM_DYNFLAG_READABLE                     = 0x00000200, // can be open for read, it or item proto pagetText make show "Right click to read"
     ITEM_DYNFLAG_UNK10                        = 0x00000400,
     ITEM_DYNFLAG_UNK11                        = 0x00000800,
-    ITEM_DYNFLAG_UNK12                        = 0x00001000,
+    ITEM_DYNFLAG_REFUNDABLE                   = 0x00001000, // Item can be returned to vendor for its original cost (extended cost)
     ITEM_DYNFLAG_UNK13                        = 0x00002000,
     ITEM_DYNFLAG_UNK14                        = 0x00004000,
     ITEM_DYNFLAG_UNK15                        = 0x00008000,
@@ -269,17 +269,20 @@ struct ItemRequiredTarget
     bool IsFitToRequirements(Unit* pUnitTarget) const;
 };
 
-bool ItemCanGoIntoBag(ItemPrototype const *proto, ItemPrototype const *pBagProto);
+bool ItemCanGoIntoBag(ItemPrototype const* proto, ItemPrototype const* pBagProto);
 
 class MANGOS_DLL_SPEC Item : public Object
 {
     public:
         static Item* CreateItem(uint32 item, uint32 count, Player const* player = NULL, uint32 randomPropertyId = 0);
-        Item* CloneItem( uint32 count, Player const* player = NULL ) const;
+        Item* CloneItem(uint32 count, Player const* player = NULL) const;
 
         Item();
 
-        virtual bool Create( uint32 guidlow, uint32 itemid, Player const* owner);
+        virtual bool Create(uint32 guidlow, uint32 itemid, Player const* owner);
+
+        void AddToWorld();
+        virtual void RemoveFromWorld(bool remove);
 
         ItemPrototype const* GetProto() const;
 
@@ -287,16 +290,23 @@ class MANGOS_DLL_SPEC Item : public Object
         void SetOwnerGuid(ObjectGuid guid) { SetGuidValue(ITEM_FIELD_OWNER, guid); }
         Player* GetOwner()const;
 
-        void SetBinding(bool val) { ApplyModFlag(ITEM_FIELD_FLAGS, ITEM_DYNFLAG_BINDED,val); }
+        void SetBinding(bool val) { ApplyModFlag(ITEM_FIELD_FLAGS, ITEM_DYNFLAG_BINDED, val); }
         bool IsSoulBound() const { return HasFlag(ITEM_FIELD_FLAGS, ITEM_DYNFLAG_BINDED); }
         bool IsBoundAccountWide() const { return GetProto()->Flags & ITEM_FLAG_BOA; }
         bool IsBindedNotWith(Player const* player) const;
         bool IsBoundByEnchant() const;
-        virtual void SaveToDB();
+
         virtual bool LoadFromDB(uint32 guidLow, Field* fields, ObjectGuid ownerGuid = ObjectGuid());
+        virtual void SaveToDB();
+
+        void LoadLootFromDB(Field* fields);
+        static void DeleteLootFromDB(uint32 guidLow, uint32 itemId = 0);
+
         virtual void DeleteFromDB();
         void DeleteFromInventoryDB();
-        void LoadLootFromDB(Field* fields);
+        static void DeleteFromDB(uint32 guidLow);
+        static void DeleteFromInventoryDB(uint32 guidLow);
+        void DeleteGiftsFromDB();
 
         bool IsBag() const { return GetProto()->InventoryType == INVTYPE_BAG; }
         bool IsBroken() const { return GetUInt32Value(ITEM_FIELD_MAXDURABILITY) > 0 && GetUInt32Value(ITEM_FIELD_DURABILITY) == 0; }
@@ -310,8 +320,8 @@ class MANGOS_DLL_SPEC Item : public Object
         bool IsLimitedToAnotherMapOrZone(uint32 cur_mapId, uint32 cur_zoneId) const;
         bool GemsFitSockets() const;
 
-        uint32 GetCount() const { return GetUInt32Value (ITEM_FIELD_STACK_COUNT); }
-        void SetCount(uint32 value) { SetUInt32Value (ITEM_FIELD_STACK_COUNT, value); }
+        uint32 GetCount() const { return GetUInt32Value(ITEM_FIELD_STACK_COUNT); }
+        void SetCount(uint32 value) { SetUInt32Value(ITEM_FIELD_STACK_COUNT, value); }
         uint32 GetMaxStackCount() const { return GetProto()->GetMaxStackSize(); }
         uint8 GetGemCountWithID(uint32 GemID) const;
         uint8 GetGemCountWithLimitCategory(uint32 limitCategory) const;
@@ -323,7 +333,7 @@ class MANGOS_DLL_SPEC Item : public Object
         uint8 GetBagSlot() const;
         void SetSlot(uint8 slot) {m_slot = slot;}
         uint16 GetPos() const { return uint16(GetBagSlot()) << 8 | GetSlot(); }
-        void SetContainer(Bag *container) { m_container = container; }
+        void SetContainer(Bag* container) { m_container = container; }
 
         bool IsInBag() const { return m_container != NULL; }
         bool IsEquipped() const;
@@ -353,7 +363,7 @@ class MANGOS_DLL_SPEC Item : public Object
 
         // spell charges (signed but stored as unsigned)
         int32 GetSpellCharges(uint8 index/*0..5*/ = 0) const { return GetInt32Value(ITEM_FIELD_SPELL_CHARGES + index); }
-        void SetSpellCharges(uint8 index/*0..5*/, int32 value) { SetInt32Value(ITEM_FIELD_SPELL_CHARGES + index,value); }
+        void SetSpellCharges(uint8 index/*0..5*/, int32 value) { SetInt32Value(ITEM_FIELD_SPELL_CHARGES + index, value); }
         bool HasMaxCharges() const;
         void RestoreCharges();
 
@@ -366,45 +376,65 @@ class MANGOS_DLL_SPEC Item : public Object
         bool HasSavedLoot() const { return m_lootState != ITEM_LOOT_NONE && m_lootState != ITEM_LOOT_NEW && m_lootState != ITEM_LOOT_TEMPORARY; }
 
         // Update States
-        ItemUpdateState GetState() const { return uState; }
+        ItemUpdateState GetState() const { return m_state; }
         void SetState(ItemUpdateState state, Player* forplayer = NULL);
         void AddToUpdateQueueOf(Player* player);
         void RemoveFromUpdateQueueOf(Player* player);
-        bool IsInUpdateQueue() const { return uQueuePos != -1; }
-        uint16 GetQueuePos() const { return uQueuePos; }
-        void FSetState(ItemUpdateState state)               // forced
-        {
-            uState = state;
-        }
+        bool IsInUpdateQueue() const { return m_queuePos != -1; }
+        uint16 GetQueuePos() const { return m_queuePos; }
+        void FSetState(ItemUpdateState state) { m_state = state; } // forced
 
         bool HasQuest(uint32 quest_id) const { return GetProto()->StartQuest == quest_id; }
         bool HasInvolvedQuest(uint32 /*quest_id*/) const { return false; }
         bool IsPotion() const { return GetProto()->IsPotion(); }
         bool IsConjuredConsumable() const { return GetProto()->IsConjuredConsumable(); }
 
-        void AddToClientUpdateList();
-        void RemoveFromClientUpdateList();
-        void BuildUpdateData(UpdateDataMapType& update_players);
+        void AddToClientUpdateList() override;
+        void RemoveFromClientUpdateList() override;
+        void BuildUpdateData(UpdateDataMapType& update_players) override;
 
         // Item Refunding system
-        bool IsEligibleForRefund();
-        void SetPlayedtimeField(uint32 time) { SetInt32Value(ITEM_FIELD_CREATE_PLAYED_TIME ,time); }
-        uint32 GetPlayedtimeField() { return GetInt32Value(ITEM_FIELD_CREATE_PLAYED_TIME); }
+        bool IsEligibleForRefund() const;
+        void SetRefundable(Player* owner, uint32 paidCost, uint16 paidExtendedCost, bool load = false);
+        void SetNotRefundable(Player* owner, bool changeState = true);
 
+        bool LoadRefundDataFromDB(Player* owner);
+        bool CheckRefundExpired(Player* owner);
+
+        uint32 GetPaidMoney() const { return m_paidCost; }
+        uint32 GetPaidExtendedCost() const { return m_paidExtCost; }
         // Soulbound trade system
-        void SetSoulboundTradeable(AllowedLooterSet* allowedLooters, Player* currentOwner, bool apply);
-        bool CheckSoulboundTradeExpire();
+        bool IsEligibleForSoulboundTrade(AllowedLooterSet* allowedLooters) const;
+        void SetSoulboundTradeable(Player* owner, AllowedLooterSet* allowedLooters, bool load = false);
+        void SetNotSoulboundTradeable(Player* owner, bool load = false);
 
-        AllowedLooterSet allowedGUIDs;
-
+        bool LoadSoulboundTradeableDataFromDB(Player* owner);
+        bool CheckSoulboundTradeExpire(Player* owner);
     private:
+        void GetDataValuesStr(std::ostringstream& ss);
+
+        bool IsRefundOrSoulboundTradeExpired(Player* owner) const;
+
+        void DeleteLootFromDB();
+
+        void DeleteRefundDataFromDB();
+        void SaveRefundDataToDB();
+
+        void DeleteSoulboundTradeableFromDB();
+        void SaveSoulboundTradeableToDB();
+
         std::string m_text;
-        uint8 m_slot;
         Bag* m_container;
-        ItemUpdateState uState;
-        int16 uQueuePos;
-        bool mb_in_trade;                                   // true if item is currently in trade-window
+        uint8 m_slot;
+        ItemUpdateState m_state;
+        int16 m_queuePos;
         ItemLootUpdateState m_lootState;
+        bool mb_in_trade;                                   // true if item is currently in trade-window
+
+        uint32 m_paidCost;
+        uint16 m_paidExtCost;
+
+        AllowedLooterSet m_allowedLooterGuids;
 };
 
 #endif

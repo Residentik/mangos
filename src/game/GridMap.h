@@ -110,7 +110,8 @@ enum GridMapLiquidStatus
 
 struct GridMapLiquidData
 {
-    uint32 type;
+    uint32 type_flags;
+    uint32 entry;
     float level;
     float depth_level;
 };
@@ -148,7 +149,8 @@ class GridMap
         uint8 m_liquid_width;
         uint8 m_liquid_height;
         float m_liquidLevel;
-        uint8 *m_liquid_type;
+        uint16* m_liquidEntry;
+        uint8* m_liquidFlags;
         float *m_liquid_map;
 
         bool loadAreaData(FILE *in, uint32 offset, uint32 size);
@@ -200,13 +202,6 @@ private:
 
 typedef ACE_Atomic_Op<ACE_Thread_Mutex, long> AtomicLong;
 
-#define MAX_HEIGHT            100000.0f                     // can be use for find ground height at surface
-#define INVALID_HEIGHT       -100000.0f                     // for check, must be equal to VMAP_INVALID_HEIGHT, real value for unknown height is VMAP_INVALID_HEIGHT_VALUE
-#define INVALID_HEIGHT_VALUE -200000.0f                     // for return, must be equal to VMAP_INVALID_HEIGHT_VALUE, check value for unknown height is VMAP_INVALID_HEIGHT
-#define MAX_FALL_DISTANCE     250000.0f                     // "unlimited fall" to find VMap ground if it is available, just larger than MAX_HEIGHT - INVALID_HEIGHT
-#define DEFAULT_HEIGHT_SEARCH     10.0f                     // default search distance to find height at nearby locations
-#define DEFAULT_WATER_SEARCH      50.0f                     // default search distance to case detection water level
-
 //class for sharing and managin GridMap objects
 class MANGOS_DLL_SPEC TerrainInfo : public Referencable<AtomicLong>
 {
@@ -216,12 +211,12 @@ public:
 
     uint32 GetMapId() const { return m_mapId; }
 
-    //TODO: move all terrain/vmaps data info query functions
-    //from 'Map' class into this class
-    float GetHeight(float x, float y, float z, bool pCheckVMap=true, float maxSearchDist=DEFAULT_HEIGHT_SEARCH) const;
+    // TODO: move all terrain/vmaps data info query functions
+    // from 'Map' class into this class
+    float GetHeightStatic(float x, float y, float z, bool pCheckVMap = true, float maxSearchDist = DEFAULT_HEIGHT_SEARCH) const;
     float GetWaterLevel(float x, float y, float z, float* pGround = NULL) const;
     float GetWaterOrGroundLevel(float x, float y, float z, float* pGround = NULL, bool swim = false) const;
-    bool IsInWater(float x, float y, float z, GridMapLiquidData *data = 0, float min_depth = 2.0f) const;
+    bool IsInWater(float x, float y, float z, GridMapLiquidData* data = 0, float min_depth = 2.0f) const;
     bool IsAboveWater(float x, float y, float z, float* pWaterZ = NULL) const;
     bool IsUnderWater(float x, float y, float z, float* pWaterZ = NULL) const;
 
@@ -238,8 +233,6 @@ public:
     bool IsOutdoors(float x, float y, float z) const;
 
     bool IsNextZcoordOK(float x, float y, float oldZ, float maxDiff = 5.0f) const;
-    bool CheckPath(float srcX, float srcY, float srcZ, float& dstX, float& dstY, float& dstZ) const;
-    bool CheckPathAccurate(float srcX, float srcY, float srcZ, float& dstX, float& dstY, float& dstZ, Unit* mover = NULL, bool onlyLOS = false) const;
 
     //this method should be used only by TerrainManager
     //to cleanup unreferenced GridMap objects - they are too heavy
@@ -280,7 +273,7 @@ private:
 //class for managing TerrainData object and all sort of geometry querying operations
 class MANGOS_DLL_DECL TerrainManager : public MaNGOS::Singleton<TerrainManager, MaNGOS::ClassLevelLockable<TerrainManager, ACE_Thread_Mutex> >
 {
-    typedef UNORDERED_MAP<uint32,  TerrainInfo *> TerrainDataMap;
+    typedef UNORDERED_MAP<uint32,  TerrainInfo*> TerrainDataMap;
     friend class MaNGOS::OperatorNew<TerrainManager>;
 
 public:
@@ -292,7 +285,7 @@ public:
 
     uint16 GetAreaFlag(uint32 mapid, float x, float y, float z) const
     {
-        TerrainInfo *pData = const_cast<TerrainManager*>(this)->LoadTerrain(mapid);
+        TerrainInfo* pData = const_cast<TerrainManager*>(this)->LoadTerrain(mapid);
         return pData->GetAreaFlag(x, y, z);
     }
     uint32 GetAreaId(uint32 mapid, float x, float y, float z) const

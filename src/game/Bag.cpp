@@ -48,13 +48,13 @@ void Bag::AddToWorld()
             m_bagslot[i]->AddToWorld();
 }
 
-void Bag::RemoveFromWorld()
+void Bag::RemoveFromWorld(bool remove)
 {
     for (uint32 i = 0; i < GetBagSize(); ++i)
         if (m_bagslot[i])
-            m_bagslot[i]->RemoveFromWorld();
+            m_bagslot[i]->RemoveFromWorld(remove);
 
-    Item::RemoveFromWorld();
+    Item::RemoveFromWorld(remove);
 }
 
 bool Bag::Create(uint32 guidlow, uint32 itemid, Player const* owner)
@@ -219,7 +219,7 @@ uint32 Bag::GetItemCountWithLimitCategory(uint32 limitCategory, Item* eItem) con
 
     for (uint32 i = 0; i < GetBagSize(); ++i)
         if (m_bagslot[i])
-            if (m_bagslot[i] != eItem && m_bagslot[i]->GetProto()->ItemLimitCategory == limitCategory )
+            if (m_bagslot[i] != eItem && m_bagslot[i]->GetProto()->ItemLimitCategory == limitCategory)
                 count += m_bagslot[i]->GetCount();
 
     return count;

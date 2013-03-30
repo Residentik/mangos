@@ -24,6 +24,7 @@
 #define __WORLD_H
 
 #include "Common.h"
+#include "LockedQueue.h"
 #include "Timer.h"
 #include "Policies/Singleton.h"
 #include "SharedDefines.h"
@@ -81,17 +82,22 @@ enum WorldTimers
     WUPDATE_DELETECHARS = 5,
     WUPDATE_AHBOT       = 6,
     WUPDATE_AUTOBROADCAST = 7,
-    WUPDATE_COUNT       = 8
+    WUPDATE_WORLDSTATE  = 8,
+    WUPDATE_CALENDAR    = 9,
+    WUPDATE_COUNT
 };
 
 /// Configuration elements
 enum eConfigUInt32Values
 {
-    CONFIG_UINT32_COMPRESSION = 0,
+    CONFIG_UINT32_REALMID = 0,
+    CONFIG_UINT32_COMPRESSION,
     CONFIG_UINT32_INTERVAL_SAVE,
     CONFIG_UINT32_INTERVAL_GRIDCLEAN,
     CONFIG_UINT32_INTERVAL_MAPUPDATE,
     CONFIG_UINT32_INTERVAL_CHANGEWEATHER,
+    CONFIG_UINT32_MAPUPDATE_MAXVISITORS,
+    CONFIG_UINT32_MAPUPDATE_MAXVISITS,
     CONFIG_UINT32_PORT_WORLD,
     CONFIG_UINT32_GAME_TYPE,
     CONFIG_UINT32_REALM_ZONE,
@@ -132,6 +138,7 @@ enum eConfigUInt32Values
     CONFIG_UINT32_GM_LEVEL_IN_GM_LIST,
     CONFIG_UINT32_GM_LEVEL_IN_WHO_LIST,
     CONFIG_UINT32_START_GM_LEVEL,
+    CONFIG_UINT32_GM_INVISIBLE_AURA,
     CONFIG_UINT32_GROUP_VISIBILITY,
     CONFIG_UINT32_MAIL_DELIVERY_DELAY,
     CONFIG_UINT32_MASS_MAILER_SEND_PER_TICK,
@@ -173,8 +180,6 @@ enum eConfigUInt32Values
     CONFIG_UINT32_ARENA_MAX_RATING_DIFFERENCE,
     CONFIG_UINT32_ARENA_RATING_DISCARD_TIMER,
     CONFIG_UINT32_ARENA_AUTO_DISTRIBUTE_INTERVAL_DAYS,
-    CONFIG_UINT32_ARENA_SEASON_ID,
-    CONFIG_UINT32_ARENA_SEASON_PREVIOUS_ID,
     CONFIG_UINT32_CLIENTCACHE_VERSION,
     CONFIG_UINT32_GUILD_EVENT_LOG_COUNT,
     CONFIG_UINT32_GUILD_BANK_EVENT_LOG_COUNT,
@@ -212,6 +217,10 @@ enum eConfigUInt32Values
     CONFIG_UINT32_VMSS_FREEZECHECKPERIOD,
     CONFIG_UINT32_VMSS_FREEZEDETECTTIME,
     CONFIG_UINT32_VMSS_FORCEUNLOADDELAY,
+    CONFIG_UINT32_WORLD_STATE_EXPIRETIME,
+    CONFIG_UINT32_OBJECTLOADINGSPLITTER_ALLOWEDTIME,
+    CONFIG_UINT32_POSITION_UPDATE_DELAY,
+    CONFIG_UINT32_RESIST_CALC_METHOD,
     CONFIG_UINT32_VALUE_COUNT
 };
 
@@ -223,6 +232,7 @@ enum eConfigInt32Values
     CONFIG_INT32_ARENA_STARTPERSONALRATING,
     CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF,
     CONFIG_INT32_QUEST_HIGH_LEVEL_HIDE_DIFF,
+    CONFIG_INT32_CALENDAR_REMOVE_EXPIRED_EVENTS_DELAY,
     CONFIG_INT32_VALUE_COUNT
 };
 
@@ -321,6 +331,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GUILD,
     CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_AUCTION,
     CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_MAIL,
+    CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_CALENDAR,
     CONFIG_BOOL_ALLOW_TWO_SIDE_WHO_LIST,
     CONFIG_BOOL_ALLOW_TWO_SIDE_ADD_FRIEND,
     CONFIG_BOOL_INSTANCE_IGNORE_LEVEL,
@@ -360,6 +371,14 @@ enum eConfigBoolValues
     CONFIG_BOOL_ARENA_QUEUE_ANNOUNCER_JOIN,
     CONFIG_BOOL_ARENA_QUEUE_ANNOUNCER_EXIT,
     CONFIG_BOOL_ARENA_QUEUE_ANNOUNCER_START,
+    CONFIG_BOOL_OUTDOORPVP_SI_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_EP_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_HP_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_ZM_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_TF_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_NA_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_GH_ENABLED,
+    CONFIG_BOOL_OUTDOORPVP_WG_ENABLED,
     CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET,
     CONFIG_BOOL_STATS_SAVE_ONLY_ON_LOGOUT,
     CONFIG_BOOL_CLEAN_CHARACTER_DB,
@@ -378,7 +397,6 @@ enum eConfigBoolValues
     CONFIG_BOOL_PLAYERBOT_DISABLE,
     CONFIG_BOOL_PLAYERBOT_DEBUGWHISPER,
     CONFIG_BOOL_PLAYERBOT_SHAREDBOTS,
-    CONFIG_BOOL_CHECK_GO_IN_PATH,
     CONFIG_BOOL_ALLOW_CUSTOM_MAPS,
     CONFIG_BOOL_ALLOW_HONOR_KILLS_TITLES,
     CONFIG_BOOL_PET_SAVE_ALL,
@@ -396,6 +414,11 @@ enum eConfigBoolValues
     CONFIG_BOOL_MMAP_ENABLED,
     CONFIG_BOOL_RESET_DUEL_AREA_ENABLED,
     CONFIG_BOOL_PET_ADVANCED_AI,
+    CONFIG_BOOL_PET_ADVANCED_AI_SLACKER,
+    CONFIG_BOOL_RESILENCE_ALTERNATIVE_CALCULATION,
+    CONFIG_BOOL_BLINK_ANIMATION_TYPE,
+    CONFIG_BOOL_FACTION_AND_RACE_CHANGE_WITHOUT_RENAMING,
+    CONFIG_BOOL_RESIST_ADD_BY_OVER_LEVEL,
     CONFIG_BOOL_VALUE_COUNT
 };
 
@@ -502,6 +525,8 @@ class World
         World();
         ~World();
 
+        void CleanupsBeforeStop();
+
         WorldSession* FindSession(uint32 id) const;
         void AddSession(WorldSession *s);
         void SendBroadcast();
@@ -574,11 +599,12 @@ class World
 
         void SendWorldText(int32 string_id, ...);
         void SendWorldTextWithSecurity(AccountTypes security, int32 string_id, ...);
-        void SendGlobalText(const char* text, WorldSession *self);
-        void SendGlobalMessage(WorldPacket *packet, WorldSession *self = 0, uint32 team = 0, AccountTypes security = SEC_PLAYER);
-        void SendZoneMessage(uint32 zone, WorldPacket *packet, WorldSession *self = 0, uint32 team = 0);
-        void SendZoneText(uint32 zone, const char *text, WorldSession *self = 0, uint32 team = 0);
-        void SendServerMessage(ServerMessageType type, const char *text = "", Player* player = NULL);
+        void SendGlobalMessage(WorldPacket* packet, WorldSession* self = NULL, Team team = TEAM_NONE, AccountTypes security = SEC_PLAYER);
+        void SendZoneMessage(uint32 zone, WorldPacket* packet, WorldSession* self = NULL, Team team = TEAM_NONE);
+        void SendZoneText(uint32 zone, const char* text, WorldSession* self = NULL, Team team = TEAM_NONE);
+        void SendServerMessage(ServerMessageType type, const char* text = "", Player* player = NULL);
+        void SendZoneUnderAttackMessage(uint32 zoneId, Team team);
+        void SendDefenseMessage(uint32 zoneId, int32 textId);
 
         /// Are we in the middle of a shutdown?
         bool IsShutdowning() const { return m_ShutdownTimer > 0; }
@@ -633,7 +659,7 @@ class World
         static float GetVisibleUnitGreyDistance()           { return m_VisibleUnitGreyDistance;       }
         static float GetVisibleObjectGreyDistance()         { return m_VisibleObjectGreyDistance;     }
 
-        static float GetRelocationLowerLimitSq()            { return m_relocation_lower_limit_sq; }
+        static float GetRelocationLowerLimit()              { return m_relocation_lower_limit; }
         static uint32 GetRelocationAINotifyDelay()          { return m_relocation_ai_notify_delay; }
 
         void ProcessCliCommands();
@@ -655,6 +681,10 @@ class World
         // reset duel system
         void setDuelResetEnableAreaIds(const char* areas);
         bool IsAreaIdEnabledDuelReset(uint32 areaId);
+
+        // Disable dungeons for LFG system
+        void setDisabledMapIdForDungeonFinder(const char* areas);
+        bool IsDungeonMapIdDisable(uint32 mapId);
 
     protected:
         void _UpdateGameTime();
@@ -728,7 +758,7 @@ class World
         static float m_VisibleUnitGreyDistance;
         static float m_VisibleObjectGreyDistance;
 
-        static float  m_relocation_lower_limit_sq;
+        static float  m_relocation_lower_limit;
         static uint32 m_relocation_ai_notify_delay;
 
         // CLI command holder to be thread safe
@@ -753,14 +783,14 @@ class World
         std::string m_CreatureEventAIVersion;
 
         // World locking for global (not-in-map) objects.
-        ObjectLockType   i_lock[MAP_LOCK_TYPE_MAX];
+        mutable ObjectLockType   i_lock[MAP_LOCK_TYPE_MAX];
 
         // reset duel system
-        std::set<uint32> areaEnabledIds; //set of areaIds where is enabled the Duel reset system
+        UNORDERED_SET<uint32> areaEnabledIds; //set of areaIds where is enabled the Duel reset system
+        // Disable dungeons for LFG system
+        UNORDERED_SET<uint32> disabledMapIdForDungeonFinder; // set of MapIds which are disabled for DungeonFinder
 
 };
-
-extern uint32 realmID;
 
 #define sWorld MaNGOS::Singleton<World>::Instance()
 #endif

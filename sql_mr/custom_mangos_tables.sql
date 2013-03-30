@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS `spell_dbc` (
   `AuraInterruptFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `ProcFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `ProcChance` tinyint(3) unsigned NOT NULL DEFAULT '0',
-  `ProcCharges` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `ProcCharges` int(10) unsigned NOT NULL DEFAULT '0',
   `MaxLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `BaseLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `SpellLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
@@ -199,30 +199,18 @@ CREATE TABLE `spell_disabled` (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=FIXED COMMENT='Disabled Spell System';
 
 -- Vehicle accessory
--- Commit e197cf0cba3487dd1a3f
 
-DROP TABLE IF EXISTS `vehicle_accessory`;
-CREATE TABLE `vehicle_accessory` (
-    `entry` mediumint(8) unsigned NOT NULL DEFAULT '0',
-    `accessory_entry` mediumint(8) unsigned NOT NULL DEFAULT '0',
-    `seat_id` tinyint(1) NOT NULL DEFAULT '0',
-    `minion` tinyint(1) unsigned NOT NULL DEFAULT '0',
-    `offset_x` FLOAT NOT NULL DEFAULT '0',
-    `offset_y` FLOAT NOT NULL DEFAULT '0',
-    `offset_z` FLOAT NOT NULL DEFAULT '0',
-    `offset_o` FLOAT NOT NULL DEFAULT '0',
-    `description` text NOT NULL,
-    PRIMARY KEY (`entry`, `seat_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=FIXED COMMENT='Vehicle Accessory System';
+ALTER TABLE `vehicle_accessory`
+    ADD COLUMN `flags` int(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT 'various flags' AFTER `accessory_entry`,
+    ADD COLUMN `offset_x` FLOAT NOT NULL DEFAULT '0' COMMENT 'custom passenger offset X' AFTER `flags`,
+    ADD COLUMN `offset_y` FLOAT NOT NULL DEFAULT '0' COMMENT 'custom passenger offset Y' AFTER `offset_x`,
+    ADD COLUMN `offset_z` FLOAT NOT NULL DEFAULT '0' COMMENT 'custom passenger offset Z' AFTER `offset_y`,
+    ADD COLUMN `offset_o` FLOAT NOT NULL DEFAULT '0' COMMENT 'custom passenger offset O' AFTER `offset_z`;
 
 -- Vehicle Tables
 -- Commit 3be940faa44326abc801
 
 ALTER TABLE `creature_template`
-    ADD COLUMN `spell5` mediumint(8) unsigned NOT NULL default '0' AFTER `spell4`,
-    ADD COLUMN `spell6` mediumint(8) unsigned NOT NULL default '0' AFTER `spell5`,
-    ADD COLUMN `spell7` mediumint(8) unsigned NOT NULL default '0' AFTER `spell6`,
-    ADD COLUMN `spell8` mediumint(8) unsigned NOT NULL default '0' AFTER `spell7`,
     ADD COLUMN `PowerType` tinyint(3) unsigned NOT NULL default '0' AFTER `MaxHealth`;
 
 -- Areatrigger table format change
@@ -328,5 +316,5 @@ CREATE TABLE IF NOT EXISTS `worldstate_template` (
     `linked_id`        int(10) unsigned NOT NULL DEFAULT '0' COMMENT 'ID of linked WorldState',
     `ScriptName`       char(64) NOT NULL default '' COMMENT 'Script name for WorldState (FFU)',
     `comment`          varchar(255) NOT NULL DEFAULT '',
-    PRIMARY KEY (`state_id`,`type`,`condition`)
+    PRIMARY KEY (`state_id`,`type`,`condition`,`linked_id`)
 ) DEFAULT CHARSET=utf8 PACK_KEYS=0 COMMENT='WorldState templates storage';

@@ -22,17 +22,33 @@ else()
   set(EXECUTABLE_NAME mangos-worldd)
 endif()
 
-file(GLOB_RECURSE EXECUTABLE_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.cpp *.h)
+set(EXECUTABLE_SRCS
+    CliRunnable.cpp
+    CliRunnable.h
+    MaNGOSsoap.cpp
+    MaNGOSsoap.h
+    Main.cpp
+    Master.cpp
+    Master.h
+    RASocket.cpp
+    RASocket.h
+    WorldRunnable.cpp
+    WorldRunnable.h
+    soapC.cpp
+    soapH.h
+    soapServer.cpp
+    soapStub.h
+   )
 
 if(WIN32)
-  list(APPEND EXECUTABLE_SRCS
-    mangosd.rc
-  )
+  # add resource file to windows build
+  set(EXECUTABLE_SRCS ${EXECUTABLE_SRCS} mangosd.rc)
 endif()
 
 include_directories(
   ${CMAKE_SOURCE_DIR}/src/shared
   ${CMAKE_SOURCE_DIR}/dep/include/gsoap
+  ${CMAKE_SOURCE_DIR}/dep/include/g3dlite
   ${CMAKE_SOURCE_DIR}/src/framework
   ${CMAKE_SOURCE_DIR}/src/game
   ${CMAKE_BINARY_DIR}

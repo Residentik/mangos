@@ -47,23 +47,29 @@ enum CanCastResult
     CAST_FAIL_TOO_CLOSE         = 4,
     CAST_FAIL_POWER             = 5,
     CAST_FAIL_STATE             = 6,
-    CAST_FAIL_TARGET_AURA       = 7
+    CAST_FAIL_TARGET_AURA       = 7,
+    CAST_FAIL_SPELL_COOLDOWN    = 8,
 };
 
 enum CastFlags
 {
-    CAST_INTERRUPT_PREVIOUS     = 0x01,                     //Interrupt any spell casting
-    CAST_TRIGGERED              = 0x02,                     //Triggered (this makes spell cost zero mana and have no cast time)
-    CAST_FORCE_CAST             = 0x04,                     //Forces cast even if creature is out of mana or out of range
-    CAST_NO_MELEE_IF_OOM        = 0x08,                     //Prevents creature from entering melee if out of mana or out of range
-    CAST_FORCE_TARGET_SELF      = 0x10,                     //Forces the target to cast this spell on itself
-    CAST_AURA_NOT_PRESENT       = 0x20,                     //Only casts the spell if the target does not have an aura from the spell
+    CAST_INTERRUPT_PREVIOUS     = 0x01,                     // Interrupt any spell casting
+    CAST_TRIGGERED              = 0x02,                     // Triggered (this makes spell cost zero mana and have no cast time)
+    CAST_FORCE_CAST             = 0x04,                     // Forces cast even if creature is out of mana or out of range
+    CAST_NO_MELEE_IF_OOM        = 0x08,                     // Prevents creature from entering melee if out of mana or out of range
+    CAST_FORCE_TARGET_SELF      = 0x10,                     // Forces the target to cast this spell on itself
+    CAST_AURA_NOT_PRESENT       = 0x20,                     // Only casts the spell if the target does not have an aura from the spell
 };
 
 class MANGOS_DLL_SPEC CreatureAI
 {
     public:
-        explicit CreatureAI(Creature* creature) : m_creature(creature) {}
+        explicit CreatureAI(Creature* creature) :
+            m_creature(creature),
+            m_isCombatMovement(true),
+            m_attackDistance(0.0f),
+            m_attackAngle(0.0f)
+        {}
 
         virtual ~CreatureAI();
 
@@ -74,7 +80,7 @@ class MANGOS_DLL_SPEC CreatureAI
          * Use this for on-the-fly debugging
          * @param reader is a ChatHandler to send messages to.
          */
-        virtual void GetAIInformation(ChatHandler& reader) {}
+        virtual void GetAIInformation(ChatHandler& /*reader*/) {}
 
         ///== Reactions At =================================
 
@@ -84,13 +90,13 @@ class MANGOS_DLL_SPEC CreatureAI
          * Note: This function is not called for creatures who are in evade mode
          * @param pWho Unit* who moved in the visibility range and is visisble
          */
-        virtual void MoveInLineOfSight(Unit* pWho) {}
+        virtual void MoveInLineOfSight(Unit* /*pWho*/) {}
 
         /**
          * Called for reaction at enter to combat if not in combat yet
          * @param pEnemy Unit* of whom the Creature enters combat with, can be NULL
          */
-        virtual void EnterCombat(Unit* pEnemy) {}
+        virtual void EnterCombat(Unit* /*pEnemy*/) {}
 
         /**
          * Called for reaction at stopping attack at no attackers or targets
@@ -111,7 +117,7 @@ class MANGOS_DLL_SPEC CreatureAI
          * @param pDoneTo Unit* to whom Damage of amount uiDamage will be dealt
          * @param uiDamage Amount of Damage that will be dealt, can be changed here
          */
-        virtual void DamageDeal(Unit* pDoneTo, uint32& uiDamage) {}
+        virtual void DamageDeal(Unit* /*pDoneTo*/, uint32& /*uiDamage*/) {}
 
         /**
          * Called at any Damage from any attacker (before damage apply)
@@ -120,69 +126,69 @@ class MANGOS_DLL_SPEC CreatureAI
          * @param pDealer Unit* who will deal Damage to the creature
          * @param uiDamage Amount of Damage that will be dealt, can be changed here
          */
-        virtual void DamageTaken(Unit* pDealer, uint32& uiDamage) {}
+        virtual void DamageTaken(Unit* /*pDealer*/, uint32& /*uiDamage*/) {}
 
         /**
          * Called when the creature is killed
          * @param pKiller Unit* who killed the creature
          */
-        virtual void JustDied(Unit* pKiller) {}
+        virtual void JustDied(Unit* /*pKiller*/) {}
 
         /**
          * Called when the corpse of this creature gets removed
          * @param uiRespawnDelay Delay (in seconds). If != 0, then this is the time after which the creature will respawn, if = 0 the default respawn-delay will be used
          */
-        virtual void CorpseRemoved(uint32& uiRespawnDelay) {}
+        virtual void CorpseRemoved(uint32& /*uiRespawnDelay*/) {}
 
         /**
          * Called when a summoned creature is killed
          * @param pSummoned Summoned Creature* that got killed
          */
-        virtual void SummonedCreatureJustDied(Creature* pSummoned) {}
+        virtual void SummonedCreatureJustDied(Creature* /*pSummoned*/) {}
 
         /**
          * Called when the creature kills a unit
          * @param pVictim Victim that got killed
          */
-        virtual void KilledUnit(Unit* pVictim) {}
+        virtual void KilledUnit(Unit* /*pVictim*/) {}
 
         /**
          * Called when owner of m_creature (if m_creature is PROTECTOR_PET) kills a unit
          * @param pVictim Victim that got killed (by owner of creature)
          */
-        virtual void OwnerKilledUnit(Unit* pVictim) {}
+        virtual void OwnerKilledUnit(Unit* /*pVictim*/) {}
 
         /**
          * Called when the creature summon successfully other creature
          * @param pSummoned Creature that got summoned
          */
-        virtual void JustSummoned(Creature* pSummoned) {}
+        virtual void JustSummoned(Creature* /*pSummoned*/) {}
 
         /**
          * Called when the creature summon successfully a gameobject
          * @param pGo GameObject that was summoned
          */
-        virtual void JustSummoned(GameObject* pGo) {}
+        virtual void JustSummoned(GameObject* /*pGo*/) {}
 
         /**
          * Called when a summoned creature gets TemporarySummon::UnSummon ed
          * @param pSummoned Summoned creature that despawned
          */
-        virtual void SummonedCreatureDespawn(Creature* pSummoned) {}
+        virtual void SummonedCreatureDespawn(Creature* /*pSummoned*/) {}
 
         /**
          * Called when hit by a spell
          * @param pCaster Caster who casted the spell
          * @param pSpell The spell that hit the creature
          */
-        virtual void SpellHit(Unit* pCaster, const SpellEntry* pSpell) {}
+        virtual void SpellHit(Unit* /*pCaster*/, const SpellEntry* /*pSpell*/) {}
 
         /**
          * Called when spell hits creature's target
          * @param pTarget Target that we hit with the spell
          * @param pSpell Spell with which we hit pTarget
          */
-        virtual void SpellHitTarget(Unit* pTarget, const SpellEntry* pSpell) {}
+        virtual void SpellHitTarget(Unit* /*pTarget*/, const SpellEntry* /*pSpell*/) {}
 
         /**
          * Called when the creature is target of hostile action: swing, hostile spell landed, fear/etc)
@@ -200,7 +206,7 @@ class MANGOS_DLL_SPEC CreatureAI
          * @param uiMovementType Type of the movement (enum MovementGeneratorType)
          * @param uiData Data related to the finished movement (ie point-id)
          */
-        virtual void MovementInform(uint32 uiMovementType, uint32 uiData) {}
+        virtual void MovementInform(uint32 /*uiMovementType*/, uint32 /*uiData*/) {}
 
         /**
          * Called if a temporary summoned of m_creature reach a move point
@@ -208,17 +214,20 @@ class MANGOS_DLL_SPEC CreatureAI
          * @param uiMotionType Type of the movement (enum MovementGeneratorType)
          * @param uiData Data related to the finished movement (ie point-id)
          */
-        virtual void SummonedMovementInform(Creature* pSummoned, uint32 uiMotionType, uint32 uiData) {}
+        virtual void SummonedMovementInform(Creature* /*pSummoned*/, uint32 /*uiMotionType*/, uint32 /*uiData*/) {}
 
         /**
          * Called at text emote receive from player
          * @param pPlayer Player* who sent the emote
          * @param uiEmote ID of the emote the player used with the creature as target
          */
-        virtual void ReceiveEmote(Player* pPlayer, uint32 uiEmote) {}
+        virtual void ReceiveEmote(Player* /*pPlayer*/, uint32 /*uiEmote*/) {}
 
-        // Called at vehicle enter
-        virtual void PassengerBoarded(Unit * /*who*/, int8 /*seatId*/, bool /*apply*/) {}
+        // Called when Unit get/remove a passenger
+        virtual void PassengerBoarded(Unit * /*pWho*/, int8 /*seatId*/, bool /*apply*/) {}
+
+        // Called when Unit enter/remove a Vehicle
+        virtual void EnteredVehicle(Unit* /*pWho*/, int8 /*seatId*/, bool /*apply*/) {}
 
         ///== Triggered Actions Requested ==================
 
@@ -228,7 +237,7 @@ class MANGOS_DLL_SPEC CreatureAI
          * Note: Usually called by MoveInLineOfSight, in Unit::SelectHostileTarget or when the AI is forced to attack an enemy
          * @param pWho Unit* who is possible target
          */
-        virtual void AttackStart(Unit* pWho) {}
+        virtual void AttackStart(Unit* /*pWho*/) {}
 
         /**
          * Called at World update tick, by default every 100ms
@@ -236,7 +245,7 @@ class MANGOS_DLL_SPEC CreatureAI
          * Note: Use this function to handle Timers, Threat-Management and MeleeAttacking
          * @param uiDiff Passed time since last call
          */
-        virtual void UpdateAI(const uint32 uiDiff) {}
+        virtual void UpdateAI(const uint32 /*uiDiff*/) {}
 
         ///== State checks =================================
 
@@ -245,7 +254,7 @@ class MANGOS_DLL_SPEC CreatureAI
          * Note: This check is by default only the state-depending (visibility, range), NOT LineOfSight
          * @param pWho Unit* who is checked if it is visisble for the creature
          */
-        virtual bool IsVisible(Unit* pWho) const { return false; }
+        virtual bool IsVisible(Unit* /*pWho*/) const { return false; }
 
         // Called when victim entered water and creature can not enter water
         // TODO: rather unused
@@ -269,25 +278,38 @@ class MANGOS_DLL_SPEC CreatureAI
          */
         CanCastResult DoCastSpellIfCan(Unit* pTarget, uint32 uiSpell, uint32 uiCastFlags = 0, ObjectGuid OriginalCasterGuid = ObjectGuid());
 
+        /// Set combat movement (on/off), also sets UNIT_STAT_NO_COMBAT_MOVEMENT
+        void SetCombatMovement(bool enable, bool stopOrStartMovement = false);
+        bool IsCombatMovement() const { return m_isCombatMovement; }
+
+    protected:
+        void HandleMovementOnAttackStart(Unit* victim);
+
         ///== Fields =======================================
 
         /// Pointer to the Creature controlled by this AI
         Creature* const m_creature;
+
+        /// Combat movement currently enabled
+        bool m_isCombatMovement;
+        /// How should an enemy be chased
+        float m_attackDistance;
+        float m_attackAngle;
 };
 
 struct SelectableAI : public FactoryHolder<CreatureAI>, public Permissible<Creature>
 {
-    SelectableAI(const char *id) : FactoryHolder<CreatureAI>(id) {}
+    SelectableAI(const char* id) : FactoryHolder<CreatureAI>(id) {}
 };
 
 template<class REAL_AI>
 struct CreatureAIFactory : public SelectableAI
 {
-    CreatureAIFactory(const char *name) : SelectableAI(name) {}
+    CreatureAIFactory(const char* name) : SelectableAI(name) {}
 
-    CreatureAI* Create(void *) const;
+    CreatureAI* Create(void*) const;
 
-    int Permit(const Creature *c) const { return REAL_AI::Permissible(c); }
+    int Permit(const Creature* c) const { return REAL_AI::Permissible(c); }
 };
 
 enum Permitions

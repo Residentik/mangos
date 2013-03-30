@@ -27,8 +27,6 @@ include_directories(
     ../../src/game/vmap
     ../../dep/include/g3dlite
     ../../src/framework
-    ../../dep/ACE_wrappers
-    ../../objdir/dep/ACE_wrappers
     ../../dep/recastnavigation/Detour/Include
     ../../dep/recastnavigation/Recast/Include
     ../../dep/src/zlib
@@ -77,6 +75,7 @@ add_library(g3dlite
     ../../dep/src/g3dlite/Crypto_md5.cpp
     ../../dep/src/g3dlite/Cylinder.cpp
     ../../dep/src/g3dlite/debugAssert.cpp
+    ../../dep/src/g3dlite/FileSystem.cpp
     ../../dep/src/g3dlite/fileutils.cpp
     ../../dep/src/g3dlite/filter.cpp
     ../../dep/src/g3dlite/format.cpp
@@ -174,4 +173,4 @@ set(SOURCES
 
 add_executable( MoveMapGen ${SOURCES} )
 
-target_link_libraries( MoveMapGen g3dlite vmap Detour Recast zlib )
+target_link_libraries( MoveMapGen g3dlite vmap Detour Recast zlib pthread ACE)

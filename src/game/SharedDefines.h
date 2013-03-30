@@ -295,7 +295,7 @@ enum SpellAttributesEx
     SPELL_ATTR_EX_NO_THREAT                    = 0x00000400,            // 10 no generates threat on cast 100%
     SPELL_ATTR_EX_UNK11                        = 0x00000800,            // 11
     SPELL_ATTR_EX_UNK12                        = 0x00001000,            // 12
-    SPELL_ATTR_EX_UNK13                        = 0x00002000,            // 13
+    SPELL_ATTR_EX_FARSIGHT                     = 0x00002000,            // 13 related to farsight (this not fully correct, but used in mangos. /dev/rsa)
     SPELL_ATTR_EX_CHANNEL_TRACKING_TARGET      = 0x00004000,            // 14
     SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY     = 0x00008000,            // 15 remove auras on immunity
     SPELL_ATTR_EX_UNAFFECTED_BY_SCHOOL_IMMUNE  = 0x00010000,            // 16 unaffected by school immunity
@@ -426,7 +426,7 @@ enum SpellAttributesEx4
 
 enum SpellAttributesEx5
 {
-    SPELL_ATTR_EX5_UNK0                        = 0x00000001,            // 0
+    SPELL_ATTR_EX5_UNK0                        = 0x00000001,            // 0 possible no interrupt from channel spell when caster move
     SPELL_ATTR_EX5_NO_REAGENT_WHILE_PREP       = 0x00000002,            // 1 not need reagents if UNIT_FLAG_PREPARATION
     SPELL_ATTR_EX5_REMOVE_AT_ENTER_ARENA       = 0x00000004,            // 2 removed at enter arena (e.g. 31850 since 3.3.3)
     SPELL_ATTR_EX5_USABLE_WHILE_STUNNED        = 0x00000008,            // 3 usable while stunned
@@ -471,7 +471,7 @@ enum SpellAttributesEx6
     SPELL_ATTR_EX6_UNK6                        = 0x00000040,            // 6
     SPELL_ATTR_EX6_UNK7                        = 0x00000080,            // 7
     SPELL_ATTR_EX6_IGNORE_CCED_TARGETS         = 0x00000100,            // 8
-    SPELL_ATTR_EX6_UNK9                        = 0x00000200,            // 9
+    SPELL_ATTR_EX6_IGNORE_DETECTION            = 0x00000200,            // 9 many spells, ignored unit detections/phasing.
     SPELL_ATTR_EX6_NORMAL_DIFFICULTY           = 0x00000400,            // 10 this spells not have heroic difficulty versions in DBC (may be only one from effects?)
     SPELL_ATTR_EX6_NOT_IN_RAID_INSTANCE        = 0x00000800,            // 11 not usable in raid instance
     SPELL_ATTR_EX6_CASTABLE_ON_VEHICLE         = 0x00001000,            // 12 for auras SPELL_AURA_TRACK_CREATURES, SPELL_AURA_TRACK_RESOURCES and SPELL_AURA_TRACK_STEALTHED select non-stacking tracking spells
@@ -483,8 +483,8 @@ enum SpellAttributesEx6
     SPELL_ATTR_EX6_UNK18                       = 0x00040000,            // 18
     SPELL_ATTR_EX6_UNK19                       = 0x00080000,            // 19
     SPELL_ATTR_EX6_UNK20                       = 0x00100000,            // 20
-    SPELL_ATTR_EX6_UNK21                       = 0x00200000,            // 21
-    SPELL_ATTR_EX6_UNK22                       = 0x00400000,            // 22
+    SPELL_ATTR_EX6_EXPLICIT_NO_BINARY_RESIST   = 0x00200000,            // 21
+    SPELL_ATTR_EX6_PCT_ABSORB                  = 0x00400000,            // 22
     SPELL_ATTR_EX6_NO_STACK_DEBUFF_MAJOR       = 0x00800000,            // 23 only debuff and debuff-like spells in 3.3.5a
     SPELL_ATTR_EX6_UNK24                       = 0x01000000,            // 24 not set in 3.0.3
     SPELL_ATTR_EX6_UNK25                       = 0x02000000,            // 25 not set in 3.0.3
@@ -603,6 +603,8 @@ enum Language
 enum Team
 {
     TEAM_NONE           = 0,                                // used when team value unknown or not set, 0 is also meaning that can be used !team check
+    TEAM_BOTH_ALLOWED   = 0,                                // used when a check should evaluate true for both teams
+    TEAM_INVALID        = 1,                                // used to invalidate some team depending checks (means not for both teams)
     HORDE               = 67,
     ALLIANCE            = 469,
 };
@@ -616,7 +618,7 @@ enum TeamIndex
 
 #define PVP_TEAM_COUNT    2
 
-static inline TeamIndex GetTeamIndex(Team team) { return team == ALLIANCE ? TEAM_INDEX_ALLIANCE : TEAM_INDEX_HORDE; }
+static inline TeamIndex GetTeamIndex(Team team) { return team == ALLIANCE ? TEAM_INDEX_ALLIANCE : ( team == HORDE ? TEAM_INDEX_HORDE : TEAM_INDEX_NEUTRAL); }
 
 enum SpellEffects
 {
@@ -764,13 +766,13 @@ enum SpellEffects
     SPELL_EFFECT_141                       = 141,
     SPELL_EFFECT_TRIGGER_SPELL_WITH_VALUE  = 142,
     SPELL_EFFECT_APPLY_AREA_AURA_OWNER     = 143,
-    SPELL_EFFECT_144                       = 144,
+    SPELL_EFFECT_KNOCKBACK_FROM_POSITION   = 144,
     SPELL_EFFECT_SUSPEND_GRAVITY           = 145,
     SPELL_EFFECT_ACTIVATE_RUNE             = 146,
     SPELL_EFFECT_QUEST_FAIL                = 147,
     SPELL_EFFECT_TRIGGER_MISSILE_2         = 148,
     SPELL_EFFECT_CHARGE2                   = 149,
-    SPELL_EFFECT_QUEST_START               = 150,
+    SPELL_EFFECT_QUEST_OFFER               = 150,
     SPELL_EFFECT_TRIGGER_SPELL_2           = 151,
     SPELL_EFFECT_FRIEND_SUMMON             = 152,
     SPELL_EFFECT_CREATE_PET                = 153,
@@ -1332,7 +1334,7 @@ enum Targets
     TARGET_88                               = 88,
     TARGET_DIRECTLY_FORWARD                 = 89,
     TARGET_NONCOMBAT_PET                    = 90,
-    TARGET_91                               = 91,
+    TARGET_DEST_RADIUS                      = 91,
     TARGET_UNIT_CREATOR                     = 92,
     TARGET_93                               = 93,
     TARGET_OWNED_VEHICLE                    = 94,
@@ -2124,9 +2126,14 @@ enum CreatureType
     CREATURE_TYPE_GAS_CLOUD        = 13
 };
 
-uint32 const CREATURE_TYPEMASK_DEMON_OR_UNDEAD = (1 << (CREATURE_TYPE_DEMON-1)) | (1 << (CREATURE_TYPE_UNDEAD-1));
-uint32 const CREATURE_TYPEMASK_HUMANOID_OR_UNDEAD = (1 << (CREATURE_TYPE_HUMANOID-1)) | (1 << (CREATURE_TYPE_UNDEAD-1));
-uint32 const CREATURE_TYPEMASK_MECHANICAL_OR_ELEMENTAL = (1 << (CREATURE_TYPE_MECHANICAL-1)) | (1 << (CREATURE_TYPE_ELEMENTAL-1));
+// Unions of CreatureType
+enum CreatureTypeMask
+{
+    CREATURE_TYPEMASK_NONE                    = 0,                                                                       // In this typemask fits players only
+    CREATURE_TYPEMASK_DEMON_OR_UNDEAD         = (1 << (CREATURE_TYPE_DEMON-1))      | (1 << (CREATURE_TYPE_UNDEAD-1)),
+    CREATURE_TYPEMASK_HUMANOID_OR_UNDEAD      = (1 << (CREATURE_TYPE_HUMANOID-1))   | (1 << (CREATURE_TYPE_UNDEAD-1)),
+    CREATURE_TYPEMASK_MECHANICAL_OR_ELEMENTAL = (1 << (CREATURE_TYPE_MECHANICAL-1)) | (1 << (CREATURE_TYPE_ELEMENTAL-1)),
+};
 
 // CreatureFamily.dbc
 enum CreatureFamily
@@ -2353,8 +2360,8 @@ enum SkillType
     SKILL_SURVIVAL2                = 142,
     SKILL_RIDING_HORSE             = 148,
     SKILL_RIDING_WOLF              = 149,
-    SKILL_RIDING_RAM               = 152,
     SKILL_RIDING_TIGER             = 150,
+    SKILL_RIDING_RAM               = 152,
     SKILL_SWIMING                  = 155,
     SKILL_2H_MACES                 = 160,
     SKILL_UNARMED                  = 162,
@@ -2912,6 +2919,23 @@ enum BattleGroundTypeId
 };
 #define MAX_BATTLEGROUND_TYPE_ID 33
 
+// handle the queue types and bg types separately to enable joining queue for different sized arenas at the same time
+enum BattleGroundQueueTypeId
+{
+    BATTLEGROUND_QUEUE_NONE     = 0,
+    BATTLEGROUND_QUEUE_AV       = 1,    // Alterac Vally
+    BATTLEGROUND_QUEUE_WS       = 2,    // Warsong Gulch
+    BATTLEGROUND_QUEUE_AB       = 3,    // Arathi basin
+    BATTLEGROUND_QUEUE_EY       = 4,    // Eye of the Storm
+    BATTLEGROUND_QUEUE_SA       = 5,    // Strand of the Ancients
+    BATTLEGROUND_QUEUE_IC       = 6,    // Isle of Conquest
+    BATTLEGROUND_QUEUE_RB       = 7,
+    BATTLEGROUND_QUEUE_2v2      = 8,
+    BATTLEGROUND_QUEUE_3v3      = 9,
+    BATTLEGROUND_QUEUE_5v5      = 10
+};
+#define MAX_BATTLEGROUND_QUEUE_TYPES 11
+
 enum ArenaType
 {
     ARENA_TYPE_NONE         = 0,                            // used for mark non-arenas or problematic cases
@@ -3054,6 +3078,19 @@ enum EncounterCreditType
     ENCOUNTER_CREDIT_CAST_SPELL     = 1
 };
 
+enum EncounterFrameCommand
+{
+    ENCOUNTER_FRAME_ENGAGE              = 0,
+    ENCOUNTER_FRAME_DISENGAGE           = 1,
+    ENCOUNTER_FRAME_UPDATE_PRIORITY     = 2,
+    ENCOUNTER_FRAME_ADD_TIMER           = 3,
+    ENCOUNTER_FRAME_ENABLE_OBJECTIVE    = 4,
+    ENCOUNTER_FRAME_UPDATE_OBJECTIVE    = 5,
+    ENCOUNTER_FRAME_DISABLE_OBJECTIVE   = 6,
+    ENCOUNTER_FRAME_UNK7                = 7,    // Seems to have something to do with sorting the encounter units
+    ENCOUNTER_FRAME_MAX
+};
+
 enum AreaLockStatus
 {
     AREA_LOCKSTATUS_OK                        = 0,
@@ -3079,17 +3116,57 @@ enum AreaLockStatus
 #define DEFAULT_VISIBILITY_INSTANCE 120.0f      // default visible distance in instances, 120 yards
 #define DEFAULT_VISIBILITY_BGARENAS 180.0f      // default visible distance in BG/Arenas, 180 yards
 
-// we need to stick to 1 version or half of the stuff will work for someone
-// others will not and opposite
-// will only support WoW, WoW:TBC and WoW:WotLK 3.3.5a client build 12340...
+enum PhaseMasks
+{
+    PHASEMASK_NONE     = 0,
+    PHASEMASK_NORMAL   = 0x00000001,
+    PHASEMASK_ANYWHERE = 0xFFFFFFFF
+};
 
-#define EXPECTED_MANGOSD_CLIENT_BUILD        {12340, 0}
+enum ActivateTaxiReply
+{
+    ERR_TAXIOK                      = 0,
+    ERR_TAXIUNSPECIFIEDSERVERERROR  = 1,
+    ERR_TAXINOSUCHPATH              = 2,
+    ERR_TAXINOTENOUGHMONEY          = 3,
+    ERR_TAXITOOFARAWAY              = 4,
+    ERR_TAXINOVENDORNEARBY          = 5,
+    ERR_TAXINOTVISITED              = 6,
+    ERR_TAXIPLAYERBUSY              = 7,
+    ERR_TAXIPLAYERALREADYMOUNTED    = 8,
+    ERR_TAXIPLAYERSHAPESHIFTED      = 9,
+    ERR_TAXIPLAYERMOVING            = 10,
+    ERR_TAXISAMENODE                = 11,
+    ERR_TAXINOTSTANDING             = 12
+};
 
-// max supported expansion level in mangosd
-// NOTE: not set it more that supported by targeted client version with all expansions installed
-// account with expansion > client supported will rejected at connection by client
-// because if client receive unsupported expansion level it think
-// that it not have expansion installed and reject
-#define MAX_EXPANSION 2
+
+enum TrackedAuraType
+{
+    TRACK_AURA_TYPE_NOT_TRACKED                 = 0,        // relation - caster : target is n:m (usual case)
+    TRACK_AURA_TYPE_SINGLE_TARGET               = 1,        // relation - caster : target is 1:1. Might get stolen
+    TRACK_AURA_TYPE_CONTROL_VEHICLE             = 2,        // relation - caster : target is N:1.
+    MAX_TRACKED_AURA_TYPES
+};
+
+enum ConditionSource                                        // From where was the condition called?
+{
+    CONDITION_FROM_LOOT             = 0,                    // Used to check a *_loot_template entry
+    CONDITION_FROM_REFERING_LOOT    = 1,                    // Used to check a entry refering to a reference_loot_template entry
+    CONDITION_FROM_GOSSIP_MENU      = 2,                    // Used to check a gossip menu menu-text
+    CONDITION_FROM_GOSSIP_OPTION    = 3,                    // Used to check a gossip menu option-item
+    CONDITION_FROM_EVENTAI          = 4,                    // Used to check EventAI Event "On Receive Emote"
+    CONDITION_FROM_HARDCODED        = 5,                    // Used to check a hardcoded event - not actually a condition
+    CONDITION_FROM_VENDOR           = 6,                    // Used to check a condition from a vendor
+};
+
+enum Expansions
+{
+    EXPANSION_NONE                      = 0,                // classic
+    EXPANSION_TBC                       = 1,                // TBC
+    EXPANSION_WOTLK                     = 2,                // WotLK
+    EXPANSION_CATA                      = 3,                // Cata
+    EXPANSION_MOP                       = 4,                // MoP
+};
 
 #endif

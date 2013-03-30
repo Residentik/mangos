@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2012 /dev/rsa for MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2012-2013 /dev/rsa for MangosR2 <http://github.com/mangosR2>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,24 +25,25 @@
 #include "StateMgr.h"
 #include "Player.h"
 #include "Creature.h"
+#include "DBCStores.h"
 
 static const class staticActionInfo
 {
     public:
     staticActionInfo()
     {
-        actionInfo[UNIT_ACTION_IDLE](UNIT_ACTION_PRIORITY_IDLE);
-        actionInfo[UNIT_ACTION_DOWAYPOINTS](UNIT_ACTION_PRIORITY_DOWAYPOINTS);
+        actionInfo[UNIT_ACTION_IDLE](UNIT_ACTION_PRIORITY_IDLE,ACTION_TYPE_RESTOREABLE);
+        actionInfo[UNIT_ACTION_DOWAYPOINTS](UNIT_ACTION_PRIORITY_DOWAYPOINTS,ACTION_TYPE_NONRESTOREABLE);
         actionInfo[UNIT_ACTION_HOME](UNIT_ACTION_PRIORITY_HOME,ACTION_TYPE_NONRESTOREABLE);
-        actionInfo[UNIT_ACTION_CHASE](UNIT_ACTION_PRIORITY_CHASE);
+        actionInfo[UNIT_ACTION_CHASE](UNIT_ACTION_PRIORITY_CHASE,ACTION_TYPE_NONRESTOREABLE);
         actionInfo[UNIT_ACTION_ASSISTANCE](UNIT_ACTION_PRIORITY_ASSISTANCE,ACTION_TYPE_NONRESTOREABLE);
-        actionInfo[UNIT_ACTION_CONTROLLED](UNIT_ACTION_PRIORITY_CONTROLLED);
-        actionInfo[UNIT_ACTION_CONFUSED](UNIT_ACTION_PRIORITY_CONFUSED);
-        actionInfo[UNIT_ACTION_FEARED]( UNIT_ACTION_PRIORITY_FEARED);
-        actionInfo[UNIT_ACTION_ROOT](UNIT_ACTION_PRIORITY_ROOT);
-        actionInfo[UNIT_ACTION_STUN](UNIT_ACTION_PRIORITY_STUN);
-        actionInfo[UNIT_ACTION_FEIGNDEATH](UNIT_ACTION_PRIORITY_FEIGNDEATH);
-        actionInfo[UNIT_ACTION_ONVEHICLE](UNIT_ACTION_PRIORITY_ONVEHICLE);
+        actionInfo[UNIT_ACTION_CONTROLLED](UNIT_ACTION_PRIORITY_CONTROLLED,ACTION_TYPE_NONRESTOREABLE);
+        actionInfo[UNIT_ACTION_CONFUSED](UNIT_ACTION_PRIORITY_CONFUSED,ACTION_TYPE_NONRESTOREABLE);
+        actionInfo[UNIT_ACTION_FEARED]( UNIT_ACTION_PRIORITY_FEARED,ACTION_TYPE_NONRESTOREABLE);
+        actionInfo[UNIT_ACTION_ROOT](UNIT_ACTION_PRIORITY_ROOT,ACTION_TYPE_RESTOREABLE);
+        actionInfo[UNIT_ACTION_STUN](UNIT_ACTION_PRIORITY_STUN,ACTION_TYPE_RESTOREABLE);
+        actionInfo[UNIT_ACTION_FEIGNDEATH](UNIT_ACTION_PRIORITY_FEIGNDEATH,ACTION_TYPE_NONRESTOREABLE);
+        actionInfo[UNIT_ACTION_ONVEHICLE](UNIT_ACTION_PRIORITY_ONVEHICLE,ACTION_TYPE_NONRESTOREABLE);
         actionInfo[UNIT_ACTION_TAXI](UNIT_ACTION_PRIORITY_TAXI,ACTION_TYPE_NONRESTOREABLE);
         actionInfo[UNIT_ACTION_EFFECT](UNIT_ACTION_PRIORITY_EFFECT,ACTION_TYPE_NONRESTOREABLE);
     }
@@ -84,11 +85,7 @@ public:
         }
 
         target->SendMeleeAttackStop(NULL);
-
-        WorldPacket data(SMSG_FORCE_MOVE_ROOT, target->GetPackGUID().size() + 4);
-        data << target->GetPackGUID();
-        data << uint32(0);
-        target->SendMessageToSet(&data, true);
+        target->SetRoot(true);
     }
 
     void Finalize(Unit &u)
@@ -102,10 +99,7 @@ public:
         if(target->getVictim())
             target->SetTargetGuid(target->getVictim()->GetObjectGuid());
 
-        WorldPacket data(SMSG_FORCE_MOVE_UNROOT, target->GetPackGUID().size() + 4);
-        data << target->GetPackGUID();
-        data << uint32(0);
-        target->SendMessageToSet(&data, true);
+        target->SetRoot(false);
         target->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ROOT);
         target->AddEvent(new AttackResumeEvent(*target), ATTACK_DISPLAY_DELAY);
     }
@@ -124,6 +118,7 @@ public:
         Unit* const target = &u;
         if (!target)
             return;
+        target->StopMoving();
         target->addUnitState(UNIT_STAT_ROOT);
         target->SetTargetGuid(ObjectGuid());
         //Save last orientation
@@ -133,23 +128,8 @@ public:
         //Clear unit movement flags
         target->m_movementInfo.RemoveMovementFlag(movementFlagsMask);
         target->m_movementInfo.AddMovementFlag(MOVEFLAG_ROOT);
-
         target->SendMeleeAttackStop(NULL);
-
-        if(target->GetTypeId() == TYPEID_PLAYER)
-        {
-            WorldPacket data(SMSG_FORCE_MOVE_ROOT, target->GetPackGUID().size() + 4);
-            data << target->GetPackGUID();
-            data << target->GetUnitStateMgr().GetCounter(UNIT_ACTION_ROOT);
-            target->SendMessageToSet(&data, true);
-        }
-        else
-        {
-            target->StopMoving();
-            WorldPacket data(SMSG_SPLINE_MOVE_ROOT, target->GetPackGUID().size());
-            data << target->GetPackGUID();
-            target->SendMessageToSet(&data, true);
-        }
+        target->SetRoot(true);
 
     }
 
@@ -159,19 +139,7 @@ public:
         if (!target)
             return;
         target->clearUnitState(UNIT_STAT_ROOT);
-        if(target->GetTypeId() == TYPEID_PLAYER)
-        {
-            WorldPacket data(SMSG_FORCE_MOVE_UNROOT, target->GetPackGUID().size() + 4);
-            data << target->GetPackGUID();
-            data << target->GetUnitStateMgr().GetCounter(UNIT_ACTION_ROOT);
-            target->SendMessageToSet(&data, true);
-        }
-        else
-        {
-            WorldPacket data(SMSG_SPLINE_MOVE_UNROOT, target->GetPackGUID().size());
-            data << target->GetPackGUID();
-            target->SendMessageToSet(&data, true);
-        }
+        target->SetRoot(false);
         target->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ROOT);
 
         if(target->getVictim())
@@ -193,8 +161,7 @@ public:
         if (!target)
             return;
 
-        if (target->GetTypeId() != TYPEID_PLAYER)
-            target->StopMoving();
+        target->StopMoving();
 
         target->m_movementInfo.RemoveMovementFlag(movementFlagsMask);
         target->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNK_29);
@@ -226,7 +193,7 @@ class TaxiState : public FlightPathMovementGenerator
 {
 public:
     TaxiState(uint32 mountDisplayId, uint32 path, uint32 startNode = 0) :
-        m_displayId(mountDisplayId), FlightPathMovementGenerator(sTaxiPathNodesByPath[path], startNode), m_previewDisplayId(0)
+        FlightPathMovementGenerator(sTaxiPathNodesByPath[path], startNode), m_displayId(mountDisplayId), m_previewDisplayId(0)
     {
     };
 
@@ -350,6 +317,9 @@ UnitActionPtr UnitStateMgr::CreateStandartState(UnitActionId stateId, ...)
     UnitActionPtr state = UnitActionPtr(NULL);
     switch (stateId)
     {
+        case UNIT_ACTION_IDLE:
+            state = UnitActionPtr(new IdleMovementGenerator());
+            break;
         case UNIT_ACTION_CONFUSED:
         case UNIT_ACTION_FEARED:
         case UNIT_ACTION_CHASE:
@@ -384,19 +354,22 @@ UnitActionPtr UnitStateMgr::CreateStandartState(UnitActionId stateId, ...)
             break;
         }
         default:
+            sLog.outError("UnitStateMgr: attempt to create unknown standart state %u, creating IDLE state instead", stateId);
+            state = UnitActionPtr(new IdleMovementGenerator());
             break;
     }
 
     va_end(vargs);
 
-    if (!state)
-        state = UnitActionPtr(new IdleMovementGenerator());
+    MANGOS_ASSERT(state);
 
     return state;
 }
 
 UnitStateMgr::UnitStateMgr(Unit* owner) : m_owner(owner), m_needReinit(false)
 {
+    m_actions.clear();
+
     for (int32 i = UNIT_ACTION_IDLE; i != UNIT_ACTION_END; ++i)
         m_stateCounter[i] = 0;
 
@@ -459,21 +432,15 @@ void UnitStateMgr::DropAction(UnitActionId actionId, UnitActionPriority priority
 {
     if (!m_actions.empty())
     {
-        for (UnitActionStorage::iterator itr = m_actions.begin(); itr != m_actions.end();)
+        std::vector<UnitActionPriority> priorityToDrop;
+        for (UnitActionStorage::const_iterator itr = m_actions.begin(); itr != m_actions.end(); ++itr)
+            if (itr->first <= priority && itr->second.Id == actionId)
+                priorityToDrop.push_back(itr->first);
+
+        while (!priorityToDrop.empty())
         {
-            if (itr->Id == actionId)
-            {
-                UnitActionPriority _priority = itr->priority;
-                if (_priority <= priority)
-                    DropAction(_priority);
-
-                if (m_actions.empty() || itr == m_actions.end())
-                    break;
-
-                itr = m_actions.begin();
-            }
-            else
-                ++itr;
+            DropAction(priorityToDrop.back());
+            priorityToDrop.pop_back();
         }
     }
 }
@@ -484,24 +451,24 @@ void UnitStateMgr::DropAction(UnitActionPriority priority)
     if (priority < UNIT_ACTION_PRIORITY_IDLE)
         return;
 
-    ActionInfo* oldInfo = CurrentState();
-    UnitActionStorage::iterator itr;
-    {
-        for (itr = m_actions.begin(); itr != m_actions.end(); ++itr)
-            if (itr->priority == priority)
-                break;
-    }
+    UnitActionStorage::iterator itr = m_actions.find(priority);
+
     if (itr != m_actions.end())
     {
         bool bActiveActionChanged = false;
+        ActionInfo* oldInfo = CurrentState();
         UnitActionPtr oldAction = oldInfo ? oldInfo->Action() : UnitActionPtr();
+
         // if dropped current active state...
-        if (oldInfo && itr->Action() == oldInfo->Action() && !oldInfo->HasFlag(ACTION_STATE_FINALIZED))
+        if (oldInfo && itr->second.Action() == oldInfo->Action() && !oldInfo->HasFlag(ACTION_STATE_FINALIZED))
             bActiveActionChanged = true;
 
-        if (itr->Action() == m_oldAction)
+        // in first - erasing current action, if his active
+        if (itr->second.Action() == m_oldAction)
             m_oldAction = UnitActionPtr(NULL);
-        m_actions.erase(itr);
+
+        // Possible erasing by iterator more fast and logic, but by Key much more safe
+        m_actions.erase(priority);
 
         // Finalized not ActionInfo, but real action (saved before), due to ActionInfo wrapper already deleted.
         if (bActiveActionChanged && oldAction)
@@ -509,7 +476,6 @@ void UnitStateMgr::DropAction(UnitActionPriority priority)
             DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "DropAction: %s finalize (direct) action %s", GetOwnerStr().c_str(), oldAction->Name());
             oldAction->Finalize(*GetOwner());
         }
-
         // in this point we delete last link to UnitActionPtr, after this UnitAction be auto-deleted...
     }
 }
@@ -549,20 +515,33 @@ void UnitStateMgr::PushAction(UnitActionId actionId, UnitActionPtr state, UnitAc
         _priority < priority)
         oldInfo->Interrupt(this);
 
-    DropAction(actionId, priority);
-    DropAction(priority);
-
-    UnitActionStorage::iterator itr;
-
-    for (itr = m_actions.begin(); itr != m_actions.end(); ++itr)
+    if (_priority > UNIT_ACTION_PRIORITY_IDLE)
     {
-        if (itr->priority > priority)
-            break;
+        // Some speedup - testing - not need drop Idle/None actions
+        DropAction(actionId, priority);
+        DropAction(priority);
     }
 
-    m_actions.insert(itr,UnitActionStorage::size_type(1),ActionInfo(actionId, state, priority, restoreable));
-    IncreaseCounter(actionId);
+    bool needInsert = true;
 
+    if (restoreable != ACTION_TYPE_NONRESTOREABLE)
+    {
+        // Don't replace (only interrupt and reset!) restoreable actions
+        UnitActionStorage::iterator itr = m_actions.find(priority);
+        if (itr != m_actions.end())
+        {
+            if (itr->second.Id == actionId)
+            {
+                itr->second.Reset(this);
+                needInsert = false;
+            }
+        }
+    }
+
+    if (needInsert)
+        m_actions.insert(UnitActionStorage::value_type(priority,ActionInfo(actionId, state, priority, restoreable)));
+
+    IncreaseCounter(actionId);
 /*
     ActionInfo* newInfo = CurrentState();
     if (newInfo && newInfo != oldInfo)
@@ -576,16 +555,24 @@ void UnitStateMgr::PushAction(UnitActionId actionId, UnitActionPtr state, UnitAc
 ActionInfo* UnitStateMgr::GetAction(UnitActionPriority priority)
 {
     for (UnitActionStorage::reverse_iterator itr = m_actions.rbegin(); itr != m_actions.rend(); ++itr)
-        if (itr->priority == priority)
-            return &(*itr);
+        if (itr->first == priority)
+            return &itr->second;
     return NULL;
 }
 
 ActionInfo* UnitStateMgr::GetAction(UnitActionPtr _action)
 {
     for (UnitActionStorage::iterator itr = m_actions.begin(); itr != m_actions.end(); ++itr)
-        if (itr->Action() == _action)
-            return &(*itr);
+        if (itr->second.Action() == _action)
+            return &itr->second;
+    return NULL;
+}
+
+ActionInfo* UnitStateMgr::GetAction(UnitActionId actionId)
+{
+    for (UnitActionStorage::reverse_iterator itr = m_actions.rbegin(); itr != m_actions.rend(); ++itr)
+        if (itr->second.Id == actionId)
+            return &itr->second;
     return NULL;
 }
 
@@ -597,26 +584,25 @@ UnitActionPtr UnitStateMgr::CurrentAction()
 
 ActionInfo* UnitStateMgr::CurrentState()
 {
-    return m_actions.empty() ? NULL : &m_actions.back();
+    return m_actions.empty() ? NULL : &m_actions.rbegin()->second;
 }
 
 void UnitStateMgr::DropAllStates()
 {
-    DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "UnitStateMgr:DropAllStates %s drop all active states", GetOwnerStr().c_str());
-    DropActionHigherThen(UNIT_ACTION_PRIORITY_IDLE);
-    PushAction(UNIT_ACTION_IDLE);
+    // Assume, that if only one action - that IDLE appears (rechecked later).
+    if (m_actions.size() > 1 )
+    {
+        DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "UnitStateMgr:DropAllStates %s drop all active states (count = %u)", GetOwnerStr().c_str(), m_actions.size());
+        DropActionHigherThen(UNIT_ACTION_PRIORITY_IDLE);
+    }
+    // Unique action after dropping may be not UNIT_ACTION_IDLE
+    if (m_actions.empty() || GetCurrentState() != UNIT_ACTION_IDLE)
+        PushAction(UNIT_ACTION_IDLE);
 }
 
 std::string const UnitStateMgr::GetOwnerStr() 
 {
     return GetOwner()->IsInWorld() ? GetOwner()->GetGuidStr() : "<Uninitialized>"; 
-};
-
-bool ActionInfo::operator < (const ActionInfo& val) const
-{
-    if (priority > val.priority)
-        return true;
-    return false;
 };
 
 bool ActionInfo::operator == (ActionInfo& val)
@@ -696,6 +682,19 @@ void ActionInfo::Interrupt(UnitStateMgr* mgr)
 
     if (Action())
         Action()->Interrupt(*mgr->GetOwner());
+}
+
+void ActionInfo::Reset(UnitStateMgr* mgr)
+{
+    if (!HasFlag(ACTION_STATE_INITIALIZED))
+        return;
+
+    if (!HasFlag(ACTION_STATE_INTERRUPTED) && 
+        HasFlag(ACTION_STATE_ACTIVE))
+        Interrupt(mgr);
+
+    RemoveFlag(ACTION_STATE_INITIALIZED);
+    DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "ActionInfo: %s reset action %s", mgr->GetOwnerStr().c_str(), TypeName());
 }
 
 bool ActionInfo::Update(UnitStateMgr* mgr, uint32 diff)

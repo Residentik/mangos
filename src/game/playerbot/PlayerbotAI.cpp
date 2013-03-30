@@ -335,7 +335,7 @@ uint32 PlayerbotAI::initSpell(uint32 spellId)
         Spell *spell = new Spell(m_bot, pSpellInfo, false);
         SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(pSpellInfo->rangeIndex);
         float range = GetSpellMaxRange(srange, IsPositiveSpell(spellId));
-        m_bot->ApplySpellMod(spellId, SPELLMOD_RANGE, range, spell);
+        m_bot->ApplySpellMod(spellId, SPELLMOD_RANGE, range);
         m_spellRangeMap.insert(std::pair<uint32, float>(spellId, range));
         delete spell;
     }
@@ -856,6 +856,8 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     break;
                 case BUY_ERR_REPUTATION_REQUIRE:
                     break;
+                default:
+                    break;
             }
             return;
         }
@@ -899,6 +901,8 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     out << "|cffff0000|hI cannot bid on my own auctions!|h|r";
                     break;
                 }
+                default:
+                    break;
             }
             TellMaster(out.str().c_str());
             return;
@@ -1547,6 +1551,8 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 
             return;
         }
+        default:
+            break;
 
             /* uncomment this and your bots will tell you all their outgoing packet opcode names
                case SMSG_MONSTER_MOVE:
@@ -2179,9 +2185,9 @@ void PlayerbotAI::SetQuestNeedCreatures()
         if (questid == 0)
             continue;
 
-        QuestStatusData &qData = m_bot->getQuestStatusMap()[questid];
+        QuestStatusData* qData = m_bot->GetQuestStatusData(questid);
         // only check quest if it is incomplete
-        if (qData.m_status != QUEST_STATUS_INCOMPLETE)
+        if (!qData || qData->m_status != QUEST_STATUS_INCOMPLETE)
             continue;
 
         Quest const* qInfo = sObjectMgr.GetQuestTemplate(questid);
@@ -2191,9 +2197,9 @@ void PlayerbotAI::SetQuestNeedCreatures()
         // All creature/GO slain/casted (not required, but otherwise it will display "Creature slain 0/10")
         for (int i = 0; i < QUEST_OBJECTIVES_COUNT; i++)
         {
-            if (!qInfo->ReqCreatureOrGOCount[i] || (qInfo->ReqCreatureOrGOCount[i] - qData.m_creatureOrGOcount[i]) <= 0)
+            if (!qInfo->ReqCreatureOrGOCount[i] || (qInfo->ReqCreatureOrGOCount[i] - qData->m_creatureOrGOcount[i]) <= 0)
                 continue;
-            m_needCreatureOrGOList[qInfo->ReqCreatureOrGOId[i]] = (qInfo->ReqCreatureOrGOCount[i] - qData.m_creatureOrGOcount[i]);
+            m_needCreatureOrGOList[qInfo->ReqCreatureOrGOId[i]] = (qInfo->ReqCreatureOrGOCount[i] - qData->m_creatureOrGOcount[i]);
         }
     }
 }
@@ -2210,9 +2216,9 @@ void PlayerbotAI::SetQuestNeedItems()
         if (questid == 0)
             continue;
 
-        QuestStatusData &qData = m_bot->getQuestStatusMap()[questid];
+        QuestStatusData* qData = m_bot->GetQuestStatusData(questid);
         // only check quest if it is incomplete
-        if (qData.m_status != QUEST_STATUS_INCOMPLETE)
+        if (!qData || qData->m_status != QUEST_STATUS_INCOMPLETE)
             continue;
 
         Quest const* qInfo = sObjectMgr.GetQuestTemplate(questid);
@@ -2222,9 +2228,9 @@ void PlayerbotAI::SetQuestNeedItems()
         // check for items we not have enough of
         for (int i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; i++)
         {
-            if (!qInfo->ReqItemCount[i] || (qInfo->ReqItemCount[i] - qData.m_itemcount[i]) <= 0)
+            if (!qInfo->ReqItemCount[i] || (qInfo->ReqItemCount[i] - qData->m_itemcount[i]) <= 0)
                 continue;
-            m_needItemList[qInfo->ReqItemId[i]] = (qInfo->ReqItemCount[i] - qData.m_itemcount[i]);
+            m_needItemList[qInfo->ReqItemId[i]] = (qInfo->ReqItemCount[i] - qData->m_itemcount[i]);
         }
     }
 }
@@ -3018,7 +3024,7 @@ void PlayerbotAI::MovementReset()
         if (m_bot->isInCombat())
             return;
 
-        Player* pTarget;                            // target is player
+        Player* pTarget = NULL;                            // target is player
         if (m_followTarget->GetTypeId() == TYPEID_PLAYER)
             pTarget = ((Player*) m_followTarget);
 
@@ -3211,10 +3217,9 @@ void PlayerbotAI::UpdateAI(const uint32 /*p_time*/)
             m_bot->SetBotDeathTimer();
             m_bot->BuildPlayerRepop();
             // relocate ghost
-            WorldLocation loc;
-            Corpse *corpse = m_bot->GetCorpse();
-            corpse->GetPosition(loc);
-            m_bot->TeleportTo(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z, m_bot->GetOrientation());
+            Corpse* corpse = m_bot->GetCorpse();
+            WorldLocation loc = corpse->GetPosition();
+            m_bot->TeleportTo(loc);
             // set state to released
             SetState(BOTSTATE_DEADRELEASED);
         }
@@ -3381,7 +3386,7 @@ bool PlayerbotAI::IsInRange(Unit* Target, uint32 spellId)
         return false;
 
     // TODO: ugly line of code
-    if (TempRange->minRange == TempRange->maxRange == 0.0f)
+    if ((TempRange->minRange == TempRange->maxRange) && (TempRange->maxRange == 0.0f))
         return true;
 
     //Unit is out of range of this spell
@@ -6552,7 +6557,7 @@ void PlayerbotAI::HandleCommand(const std::string& text, Player& fromPlayer)
             extractSpellIdList(part, m_spellsToLearn);
             for (std::list<uint32>::iterator it = m_spellsToLearn.begin(); it != m_spellsToLearn.end(); ++it)
             {
-                if (sSpellMgr.IsPrimaryProfessionSpell(*it) && subcommand != "learn")
+                if (SpellMgr::IsPrimaryProfessionSpell(*it) && subcommand != "learn")
                 {
                     SpellLearnSkillNode const* spellLearnSkill = sSpellMgr.GetSpellLearnSkill(*it);
 

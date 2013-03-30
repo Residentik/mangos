@@ -18,7 +18,7 @@
 
 #include "Common.h"
 #include "Log.h"
-#include "Policies/SingletonImp.h"
+#include "Policies/Singleton.h"
 #include "Config/Config.h"
 #include "Util.h"
 #include "ByteBuffer.h"
@@ -40,8 +40,8 @@ LogFilterData logFilterData[LOG_FILTER_COUNT] =
     { "achievement_updates", "LogFilter_AchievementUpdates", true  },
     { "weather",             "LogFilter_Weather",            true  },
     { "player_stats",        "LogFilter_PlayerStats",        false },
-    { "sql_text",            "LogFilter_SQLText",            false },
-    { "player_moves",        "LogFilter_PlayerMoves",        false },
+    { "sql_text",            "LogFilter_SQLText",            true  },
+    { "player_moves",        "LogFilter_PlayerMoves",        true  },
     { "periodic_effects",    "LogFilter_PeriodicAffects",    false },
     { "ai_and_movegens",     "LogFilter_AIAndMovegens",      false },
     { "damage",              "LogFilter_Damage",             false },
@@ -51,6 +51,9 @@ LogFilterData logFilterData[LOG_FILTER_COUNT] =
     { "ahbot_seller",        "LogFilter_AhbotSeller",        true  },
     { "ahbot_buyer",         "LogFilter_AhbotBuyer",         true  },
     { "pathfinding",         "LogFilter_Pathfinding",        true  },
+    { "calendar",            "LogFilter_Calendar",           true  },
+    { "map_loading",         "LogFilter_MapLoading",         true  },
+    { "event_ai_dev",        "LogFilter_EventAiDev",         true  },
 };
 
 enum LogType
@@ -65,7 +68,7 @@ const int LogType_count = int(LogError) +1;
 
 Log::Log() :
     raLogfile(NULL), logfile(NULL), gmLogfile(NULL), charLogfile(NULL),
-    dberLogfile(NULL), m_colored(false), m_includeTime(false), m_gmlog_per_account(false)
+    dberLogfile(NULL), eventAiErLogfile(NULL), scriptErrLogFile(NULL), worldLogfile(NULL), m_colored(false), m_includeTime(false), m_gmlog_per_account(false), m_scriptLibName(NULL)
 {
     Initialize();
 }
@@ -259,11 +262,18 @@ void Log::Initialize()
         }
     }
 
-    charLogfile = openLogFile("CharLogFile","CharLogTimestamp","a");
-    dberLogfile = openLogFile("DBErrorLogFile",NULL,"a");
-    raLogfile = openLogFile("RaLogFile",NULL,"a");
-    worldLogfile = openLogFile("WorldLogFile","WorldLogTimestamp","a");
+    charLogfile = openLogFile("CharLogFile", "CharLogTimestamp", "a");
+    dberLogfile = openLogFile("DBErrorLogFile", NULL, "a");
+    eventAiErLogfile = openLogFile("EventAIErrorLogFile", NULL, "a");
+    raLogfile = openLogFile("RaLogFile", NULL, "a");
+    worldLogfile = openLogFile("WorldLogFile", "WorldLogTimestamp", "a");
 
+    ReloadConfigDefaults();
+
+}
+
+void Log::ReloadConfigDefaults()
+{
     // Main log file settings
     m_includeTime  = sConfig.GetBoolDefault("LogTime", false);
     m_logLevel     = LogLevel(sConfig.GetIntDefault("LogLevel", 0));
@@ -271,10 +281,16 @@ void Log::Initialize()
     InitColors(sConfig.GetStringDefault("LogColors", ""));
 
     m_logFilter = 0;
-    for(int i = 0; i < LOG_FILTER_COUNT; ++i)
+    for (int i = 0; i < LOG_FILTER_COUNT; ++i)
+    {
         if (*logFilterData[i].name)
+        {
             if (sConfig.GetBoolDefault(logFilterData[i].configName, logFilterData[i].defaultState))
                 m_logFilter |= (1 << i);
+            else
+                m_logFilter &= ~(1 << i);
+        }
+    }
 
     // Char log settings
     m_charLog_Dump = sConfig.GetBoolDefault("CharLogDump", false);
@@ -513,7 +529,82 @@ void Log::outErrorDb( const char * err, ... )
     fflush(stderr);
 }
 
-void Log::outBasic( const char * str, ... )
+void Log::outErrorEventAI()
+{
+    if (m_includeTime)
+        outTime();
+
+    fprintf(stderr, "\n");
+
+    if (logfile)
+    {
+        outTimestamp(logfile);
+        fprintf(logfile, "ERROR CreatureEventAI\n");
+        fflush(logfile);
+    }
+
+    if (eventAiErLogfile)
+    {
+        outTimestamp(eventAiErLogfile);
+        fprintf(eventAiErLogfile, "\n");
+        fflush(eventAiErLogfile);
+    }
+
+    fflush(stderr);
+}
+
+void Log::outErrorEventAI(const char* err, ...)
+{
+    if (!err)
+        return;
+
+    if (m_colored)
+        SetColor(false, m_colors[LogError]);
+
+    if (m_includeTime)
+        outTime();
+
+    va_list ap;
+
+    va_start(ap, err);
+    vutf8printf(stderr, err, &ap);
+    va_end(ap);
+
+    if (m_colored)
+        ResetColor(false);
+
+    fprintf(stderr, "\n");
+
+    if (logfile)
+    {
+        outTimestamp(logfile);
+        fprintf(logfile, "ERROR CreatureEventAI: ");
+
+        va_start(ap, err);
+        vfprintf(logfile, err, ap);
+        va_end(ap);
+
+        fprintf(logfile, "\n");
+        fflush(logfile);
+    }
+
+    if (eventAiErLogfile)
+    {
+        outTimestamp(eventAiErLogfile);
+
+        va_list ap;
+        va_start(ap, err);
+        vfprintf(eventAiErLogfile, err, ap);
+        va_end(ap);
+
+        fprintf(eventAiErLogfile, "\n");
+        fflush(eventAiErLogfile);
+    }
+
+    fflush(stderr);
+}
+
+void Log::outBasic(const char* str, ...)
 {
     if (!str)
         return;
@@ -712,10 +803,93 @@ void Log::outChar(const char * str, ... )
     }
 }
 
-void Log::outWorldPacketDump( uint32 socket, uint32 opcode, char const* opcodeName, ByteBuffer const* packet, bool incoming )
+void Log::outErrorScriptLib()
+{
+    if (m_includeTime)
+        outTime();
+
+    fprintf(stderr, "\n");
+
+    if (logfile)
+    {
+        outTimestamp(logfile);
+        if (m_scriptLibName)
+            fprintf(logfile, "<%s ERROR:> ", m_scriptLibName);
+        else
+            fprintf(logfile, "<Scripting Library ERROR>: ");
+        fflush(logfile);
+    }
+
+    if (scriptErrLogFile)
+    {
+        outTimestamp(scriptErrLogFile);
+        fprintf(scriptErrLogFile, "\n");
+        fflush(scriptErrLogFile);
+    }
+
+    fflush(stderr);
+}
+
+void Log::outErrorScriptLib(const char* err, ...)
+{
+    if (!err)
+        return;
+
+    if (m_colored)
+        SetColor(false, m_colors[LogError]);
+
+    if (m_includeTime)
+        outTime();
+
+    va_list ap;
+
+    va_start(ap, err);
+    vutf8printf(stderr, err, &ap);
+    va_end(ap);
+
+    if (m_colored)
+        ResetColor(false);
+
+    fprintf(stderr, "\n");
+
+    if (logfile)
+    {
+        outTimestamp(logfile);
+        if (m_scriptLibName)
+            fprintf(logfile, "<%s ERROR>: ", m_scriptLibName);
+        else
+            fprintf(logfile, "<Scripting Library ERROR>: ");
+
+        va_start(ap, err);
+        vfprintf(logfile, err, ap);
+        va_end(ap);
+
+        fprintf(logfile, "\n");
+        fflush(logfile);
+    }
+
+    if (scriptErrLogFile)
+    {
+        outTimestamp(scriptErrLogFile);
+
+        va_list ap;
+        va_start(ap, err);
+        vfprintf(scriptErrLogFile, err, ap);
+        va_end(ap);
+
+        fprintf(scriptErrLogFile, "\n");
+        fflush(scriptErrLogFile);
+    }
+
+    fflush(stderr);
+}
+
+void Log::outWorldPacketDump(uint32 socket, uint32 opcode, char const* opcodeName, ByteBuffer const* packet, bool incoming)
 {
     if (!worldLogfile)
         return;
+
+    ACE_GUARD(ACE_Thread_Mutex, GuardObj, m_worldLogMtx);
 
     outTimestamp(worldLogfile);
 
@@ -787,7 +961,25 @@ void Log::WaitBeforeContinueIfNeed()
     }
 }
 
-void outstring_log(const char * str, ...)
+void Log::setScriptLibraryErrorFile(char const* fname, char const* libName)
+{
+    m_scriptLibName = libName;
+
+    if (scriptErrLogFile)
+        fclose(scriptErrLogFile);
+
+    if (!fname)
+    {
+        scriptErrLogFile = NULL;
+        return;
+    }
+
+    std::string fileName = m_logsDir;
+    fileName.append(fname);
+    scriptErrLogFile = fopen(fileName.c_str(), "a");
+}
+
+void outstring_log(const char* str, ...)
 {
     if (!str)
         return;
@@ -855,4 +1047,23 @@ void error_db_log(const char * str, ...)
     va_end(ap);
 
     sLog.outErrorDb("%s", buf);
+}
+
+void setScriptLibraryErrorFile(char const* fname, char const* libName)
+{
+    sLog.setScriptLibraryErrorFile(fname, libName);
+}
+
+void script_error_log(const char* str, ...)
+{
+    if (!str)
+        return;
+
+    char buf[256];
+    va_list ap;
+    va_start(ap, str);
+    vsnprintf(buf, 256, str, ap);
+    va_end(ap);
+
+    sLog.outErrorScriptLib("%s", buf);
 }

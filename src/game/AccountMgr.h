@@ -65,7 +65,7 @@ class AccountMgr
 
         uint32 GetId(std::string username);
         AccountTypes GetSecurity(uint32 acc_id);
-        bool GetName(uint32 acc_id, std::string &name);
+        bool GetName(uint32 acc_id, std::string& name);
         uint32 GetCharactersCount(uint32 acc_id);
         std::string CalculateShaPassHash(std::string& name, std::string& password);
 
@@ -80,7 +80,7 @@ class AccountMgr
 
         void LockAccount(uint32 acc_id, bool lock);
 
-        PlayerDataCache const* GetPlayerDataCache(ObjectGuid guid);
+        PlayerDataCache const* GetPlayerDataCache(ObjectGuid guid, bool force = true);
         PlayerDataCache const* GetPlayerDataCache(const std::string& name);
         void  ClearPlayerDataCache(ObjectGuid guid);
         void  MakePlayerDataCache(Player* player);
@@ -92,7 +92,7 @@ class AccountMgr
         static bool normalizeString(std::string& utf8str);
 
         // multithread locking
-        typedef   ACE_RW_Thread_Mutex          LockType;
+        typedef   MANGOSR2_MUTEX_MODEL         LockType;
         typedef   ACE_Read_Guard<LockType>     ReadGuard;
         typedef   ACE_Write_Guard<LockType>    WriteGuard;
         LockType& GetLock() { return i_lock; }

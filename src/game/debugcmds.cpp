@@ -26,7 +26,7 @@
 #include "Unit.h"
 #include "GossipDef.h"
 #include "Language.h"
-#include "BattleGroundMgr.h"
+#include "BattleGround/BattleGroundMgr.h"
 #include <fstream>
 #include "ObjectMgr.h"
 #include "ObjectGuid.h"
@@ -144,10 +144,10 @@ bool ChatHandler::HandleDebugSendOpcodeCommand(char* /*args*/)
     if (ifs.bad())
         return false;
 
-    uint32 opcode;
-    ifs >> opcode;
+    uint32 _opcode;
+    ifs >> _opcode;
 
-    WorldPacket data(opcode, 0);
+    WorldPacket data(Opcodes(_opcode), 0);
 
     while(!ifs.eof())
     {
@@ -208,20 +208,6 @@ bool ChatHandler::HandleDebugSendOpcodeCommand(char* /*args*/)
     data.hexlike();
     ((Player*)unit)->GetSession()->SendPacket(&data);
     PSendSysMessage(LANG_COMMAND_OPCODESENT, data.GetOpcode(), unit->GetName());
-    return true;
-}
-
-bool ChatHandler::HandleDebugUpdateWorldStateCommand(char* args)
-{
-    uint32 world;
-    if (!ExtractUInt32(&args, world))
-        return false;
-
-    uint32 state;
-    if (!ExtractUInt32(&args, state))
-        return false;
-
-    m_session->GetPlayer()->SendUpdateWorldState(world, state);
     return true;
 }
 
@@ -1116,7 +1102,7 @@ bool ChatHandler::HandleDebugSpellModsCommand(char* args)
     if (!typeStr)
         return false;
 
-    uint16 opcode;
+    Opcodes opcode;
     if (strncmp(typeStr, "flat", strlen(typeStr)) == 0)
         opcode = SMSG_SET_FLAT_SPELL_MODIFIER;
     else if (strncmp(typeStr, "pct", strlen(typeStr)) == 0)

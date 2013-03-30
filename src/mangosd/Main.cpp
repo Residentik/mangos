@@ -56,8 +56,6 @@ DatabaseType WorldDatabase;                                 ///< Accessor to the
 DatabaseType CharacterDatabase;                             ///< Accessor to the character database
 DatabaseType LoginDatabase;                                 ///< Accessor to the realm/login database
 
-uint32 realmID;                                             ///< Id of the realm
-
 /// Print out the usage string for this program on the console.
 void usage(const char *prog)
 {
@@ -198,14 +196,14 @@ extern int main(int argc, char **argv)
         "        MMMMMM  R2 modifications included (https://github.com/mangosR2/mangos)\n\n");
     sLog.outString("Using configuration file %s.", cfg_file);
 
-    DETAIL_LOG("%s (Library: %s)", OPENSSL_VERSION_TEXT, SSLeay_version(SSLEAY_VERSION));
+    sLog.outString("Using %s (Library: %s)", OPENSSL_VERSION_TEXT, SSLeay_version(SSLEAY_VERSION));
     if (SSLeay() < 0x009080bfL )
     {
         DETAIL_LOG("WARNING: Outdated version of OpenSSL lib. Logins to server may not work!");
         DETAIL_LOG("WARNING: Minimal required version [OpenSSL 0.9.8k]");
     }
 
-    DETAIL_LOG("Using ACE: %s", ACE_VERSION);
+    sLog.outString("Using ACE: %s", ACE_VERSION);
 
     ///- Set progress bars show mode
     BarGoLink::SetOutputState(sConfig.GetBoolDefault("ShowProgressBars", true));

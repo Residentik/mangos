@@ -52,7 +52,21 @@ void WorldSession::SendPartyResult(PartyOperation operation, const std::string& 
     SendPacket( &data );
 }
 
-void WorldSession::HandleGroupInviteOpcode( WorldPacket & recv_data )
+void WorldSession::SendGroupInvite(Player* player, bool alreadyInGroup /*= false*/)
+{
+    WorldPacket data(SMSG_GROUP_INVITE, 10);                // guess size
+    data << uint8(alreadyInGroup ? 0 : 1);                  // invited/already in group flag
+    data << GetPlayer()->GetName();                         // max len 48
+    data << uint32(0);                                      // unk
+    data << uint8(0);                                       // count
+    // for(int i = 0; i < count; ++i)
+    //    data << uint32(0);
+    data << uint32(0);                                      // unk
+
+    player->GetSession()->SendPacket(&data);
+}
+
+void WorldSession::HandleGroupInviteOpcode(WorldPacket& recv_data)
 {
     std::string membername;
     recv_data >> membername;
@@ -106,25 +120,24 @@ void WorldSession::HandleGroupInviteOpcode( WorldPacket & recv_data )
         return;
     }
 
-    Group *group2 = player->GetGroup();
-    if( group2 && group2->isBGGroup() )
+    // player already invited
+    if (player->GetGroupInvite())
+    {
+        SendPartyResult(PARTY_OP_INVITE, membername, ERR_ALREADY_IN_GROUP_S);
+        return;
+    }
+
+    Group* group2 = player->GetGroup();
+    if (group2 && group2->isBGGroup())
         group2 = player->GetOriginalGroup();
-    // player already in another group or invited
-    if( group2 || player->GetGroupInvite() )
+
+    // player already in another group
+    if (group2)
     {
         SendPartyResult(PARTY_OP_INVITE, membername, ERR_ALREADY_IN_GROUP_S);
 
-        if (group2)
-        {
-            // tell the player that they were invited but it failed as they were already in a group
-            WorldPacket data(SMSG_GROUP_INVITE, 10);                // guess size
-            data << uint8(0);                                       // invited/already in group flag
-            data << GetPlayer()->GetName();                         // max len 48
-            data << uint32(0);                                      // unk
-            data << uint8(0);                                       // count
-            data << uint32(0);                                      // unk
-            player->GetSession()->SendPacket(&data);
-        }
+        // tell the player that they were invited but it failed as they were already in a group
+        SendGroupInvite(player, true);
 
         return;
     }
@@ -150,7 +163,7 @@ void WorldSession::HandleGroupInviteOpcode( WorldPacket & recv_data )
     // at least one person joins
     if(!group)
     {
-        group = new Group;
+        group = new Group(GROUPTYPE_NORMAL);
         // new group: if can't add then delete
         if(!group->AddLeaderInvite(GetPlayer()))
         {
@@ -172,17 +185,7 @@ void WorldSession::HandleGroupInviteOpcode( WorldPacket & recv_data )
         }
     }
 
-    // ok, we do it
-    WorldPacket data(SMSG_GROUP_INVITE, 10);                // guess size
-    data << uint8(1);                                       // invited/already in group flag
-    data << GetPlayer()->GetName();                         // max len 48
-    data << uint32(0);                                      // unk
-    data << uint8(0);                                       // count
-    //for(int i = 0; i < count; ++i)
-    //    data << uint32(0);
-    data << uint32(0);                                      // unk
-    player->GetSession()->SendPacket(&data);
-
+    SendGroupInvite(player);
     SendPartyResult(PARTY_OP_INVITE, membername, ERR_PARTY_RESULT_OK);
 }
 
@@ -372,7 +375,7 @@ void WorldSession::HandleGroupSetLeaderOpcode( WorldPacket & recv_data )
     /********************/
 
     // everything is fine, do it
-    GetPlayer()->GetLFGState()->RemoveRole(ROLE_LEADER);
+    GetPlayer()->GetLFGPlayerState()->RemoveRole(ROLE_LEADER);
     group->ChangeLeader(guid);
 }
 
@@ -580,7 +583,8 @@ void WorldSession::HandleGroupChangeSubGroupOpcode( WorldPacket & recv_data )
     /********************/
 
     // everything is fine, do it
-    if (Player* player = sObjectMgr.GetPlayer(name.c_str()))
+    Player* player = sObjectMgr.GetPlayer(name.c_str());
+    if (player)
         group->ChangeMembersGroup(player, groupNr);
     else
     {
@@ -740,15 +744,15 @@ void WorldSession::BuildPartyMemberStatsChangedPacket(Player *player, WorldPacke
 
     if (mask & GROUP_UPDATE_FLAG_AURAS)
     {
-        MAPLOCK_READ(player,MAP_LOCK_TYPE_AURAS);
         const uint64& auramask = player->GetAuraUpdateMask();
         *data << uint64(auramask);
         for(uint32 i = 0; i < MAX_AURAS; ++i)
         {
             if(auramask & (uint64(1) << i))
             {
-                *data << uint32(player->GetVisibleAura(i));
-                *data << uint8(1);
+                SpellAuraHolderPtr holder = player->GetVisibleAura(i);
+                *data << uint32(holder ? holder->GetId() : 0);
+                *data << uint8(holder ? 1 : 0);
             }
         }
     }
@@ -824,8 +828,9 @@ void WorldSession::BuildPartyMemberStatsChangedPacket(Player *player, WorldPacke
             {
                 if(auramask & (uint64(1) << i))
                 {
-                    *data << uint32(pet->GetVisibleAura(i));
-                    *data << uint8(1);
+                    SpellAuraHolderPtr holder = pet->GetVisibleAura(i);
+                    *data << uint32(holder ? holder->GetId() : 0);
+                    *data << uint8(holder ? 1 : 0);
                 }
             }
         }
@@ -892,9 +897,9 @@ void WorldSession::HandleRequestPartyMemberStatsOpcode( WorldPacket &recv_data )
     else if (player->IsBeingTeleported())               // Player is in teleportation
     {
         WorldLocation& loc = player->GetTeleportDest(); // So take teleportation destination
-        iZoneId = sTerrainMgr.GetZoneId(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z);
-        iCoordX = loc.coord_x;
-        iCoordY = loc.coord_y;
+        iZoneId = sTerrainMgr.GetZoneId(loc.GetMapId(), loc.x, loc.y, loc.z);
+        iCoordX = loc.x;
+        iCoordY = loc.y;
     }
     else
     {
@@ -908,13 +913,12 @@ void WorldSession::HandleRequestPartyMemberStatsOpcode( WorldPacket &recv_data )
     uint64 auramask = 0;
     size_t maskPos = data.wpos();
     data << uint64(auramask);                               // placeholder
-    for(uint8 i = 0; i < MAX_AURAS; ++i)
+    for (uint8 i = 0; i < MAX_AURAS; ++i)
     {
-        MAPLOCK_READ(player,MAP_LOCK_TYPE_AURAS);
-        if(uint32 aura = player->GetVisibleAura(i))
+        if (SpellAuraHolderPtr holder = player->GetVisibleAura(i))
         {
             auramask |= (uint64(1) << i);
-            data << uint32(aura);
+            data << uint32(holder->GetId());
             data << uint8(1);
         }
     }
@@ -935,13 +939,12 @@ void WorldSession::HandleRequestPartyMemberStatsOpcode( WorldPacket &recv_data )
         uint64 petauramask = 0;
         size_t petMaskPos = data.wpos();
         data << uint64(petauramask);                        // placeholder
-        for(uint8 i = 0; i < MAX_AURAS; ++i)
+        for (uint8 i = 0; i < MAX_AURAS; ++i)
         {
-            MAPLOCK_READ(pet,MAP_LOCK_TYPE_AURAS);
-            if(uint32 petaura = pet->GetVisibleAura(i))
+            if (SpellAuraHolderPtr holder = pet->GetVisibleAura(i))
             {
                 petauramask |= (uint64(1) << i);
-                data << uint32(petaura);
+                data << uint32(holder->GetId());
                 data << uint8(1);
             }
         }

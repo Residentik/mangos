@@ -32,6 +32,7 @@
 #include "NPCHandler.h"
 #include "Pet.h"
 #include "MapManager.h"
+#include "SQLStorages.h"
 
 void WorldSession::SendNameQueryOpcode(Player *p)
 {
@@ -178,8 +179,8 @@ void WorldSession::HandleCreatureQueryOpcode( WorldPacket & recv_data )
         for(int i = 0; i < MAX_CREATURE_MODEL; ++i)
             data << uint32(ci->ModelId[i]);
 
-        data << float(ci->unk16);                           // health modifier
-        data << float(ci->power_mod);                           // power modifier
+        data << float(ci->healthModifier);                      // health modifier
+        data << float(ci->powerModifier);                       // power modifier
         data << uint8(ci->RacialLeader);
         for(uint32 i = 0; i < 6; ++i)
             data << uint32(ci->questItems[i]);              // itemId[6], quest drop
@@ -291,7 +292,7 @@ void WorldSession::HandleCorpseQueryOpcode(WorldPacket & /*recv_data*/)
                     mapid = corpseMapEntry->ghost_entrance_map;
                     x = corpseMapEntry->ghost_entrance_x;
                     y = corpseMapEntry->ghost_entrance_y;
-                    z = entranceMap->GetHeight(x, y, MAX_HEIGHT);
+                    z = entranceMap->GetHeightStatic(x, y, MAX_HEIGHT);
                 }
             }
         }
@@ -452,7 +453,7 @@ void WorldSession::HandleQueryQuestsCompletedOpcode( WorldPacket & /*recv_data *
     WorldPacket data(SMSG_ALL_QUESTS_COMPLETED, 4+4*count);
     data << uint32(count);
 
-    for(QuestStatusMap::const_iterator itr = _player->getQuestStatusMap().begin(); itr != _player->getQuestStatusMap().end(); ++itr)
+    for(QuestStatusMap::const_iterator itr = _player->GetQuestStatusMap().begin(); itr != _player->GetQuestStatusMap().end(); ++itr)
     {
         if(itr->second.m_rewarded)
         {

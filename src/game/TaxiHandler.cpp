@@ -149,7 +149,16 @@ bool WorldSession::SendLearnNewTaxiNode( Creature* unit )
         return false;
 }
 
-void WorldSession::HandleActivateTaxiExpressOpcode ( WorldPacket & recv_data )
+void WorldSession::SendActivateTaxiReply(ActivateTaxiReply reply)
+{
+    WorldPacket data(SMSG_ACTIVATETAXIREPLY, 4);
+    data << uint32(reply);
+    SendPacket(&data);
+
+    DEBUG_LOG("WORLD: Sent SMSG_ACTIVATETAXIREPLY");
+}
+
+void WorldSession::HandleActivateTaxiExpressOpcode(WorldPacket& recv_data)
 {
     DEBUG_LOG( "WORLD: Received CMSG_ACTIVATETAXIEXPRESS" );
 
@@ -204,12 +213,12 @@ void WorldSession::HandleMoveSplineDoneOpcode(WorldPacket& recv_data)
     TaxiNodesEntry const* curDestNode = sTaxiNodesStore.LookupEntry(curDest);
 
     // far teleport case
-    if(curDestNode && curDestNode->map_id != GetPlayer()->GetMapId())
+    if (curDestNode && curDestNode->map_id != GetPlayer()->GetMapId())
     {
-        if(GetPlayer()->GetMotionMaster()->GetCurrentMovementGeneratorType()==FLIGHT_MOTION_TYPE)
+        if (GetPlayer()->IsInUnitState(UNIT_ACTION_TAXI))
         {
             // short preparations to continue flight
-            FlightPathMovementGenerator* flight = (FlightPathMovementGenerator*)(GetPlayer()->GetMotionMaster()->top());
+            FlightPathMovementGenerator* flight = (FlightPathMovementGenerator*)(GetPlayer()->GetMotionMaster()->CurrentMovementGenerator());
 
             flight->Interrupt(*GetPlayer());                // will reset at map landing
 
@@ -217,7 +226,7 @@ void WorldSession::HandleMoveSplineDoneOpcode(WorldPacket& recv_data)
             TaxiPathNodeEntry const& node = flight->GetPath()[flight->GetCurrentNode()];
             flight->SkipCurrentNode();
 
-            GetPlayer()->TeleportTo(curDestNode->map_id,node.x,node.y,node.z,GetPlayer()->GetOrientation());
+            GetPlayer()->TeleportTo(curDestNode->map_id,node.x,node.y,node.z,GetPlayer()->GetOrientation(), TELE_TO_NODELAY);
         }
         return;
     }

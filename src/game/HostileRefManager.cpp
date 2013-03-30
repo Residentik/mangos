@@ -23,7 +23,7 @@
 #include "SpellMgr.h"
 #include "Map.h"
 
-HostileRefManager::HostileRefManager( Unit *pOwner ) : iOwner(pOwner), m_redirectionMod(0.0f)
+HostileRefManager::HostileRefManager(Unit* pOwner) : iOwner(pOwner), m_redirectionMod(0.0f)
 {
 
 }
@@ -38,14 +38,10 @@ HostileRefManager::~HostileRefManager()
 // The pVictim is hated than by them as well
 // use for buffs and healing threat functionality
 
-void HostileRefManager::threatAssist(Unit *pVictim, float pThreat, SpellEntry const *pThreatSpell, bool pSingleTarget)
+void HostileRefManager::threatAssist(Unit* pVictim, float pThreat, SpellEntry const* pThreatSpell, bool pSingleTarget)
 {
-    MAPLOCK_READ(iOwner, MAP_LOCK_TYPE_DEFAULT);
-    //float redirectedMod = pVictim->getHostileRefManager().GetThreatRedirectionMod();
-    //Unit* redirectedTarget = redirectedMod ? pVictim->getHostileRefManager().GetThreatRedirectionTarget() : NULL;
-
     uint32 size = pSingleTarget ? 1 : getSize();            // if pSingleTarget do not devide threat
-    float threat = pThreat/size;
+    float threat = pThreat / size;
     HostileReference* ref = getFirst();
     while (ref)
     {
@@ -59,11 +55,10 @@ void HostileRefManager::threatAssist(Unit *pVictim, float pThreat, SpellEntry co
 
 void HostileRefManager::addThreatPercent(int32 pValue)
 {
-    MAPLOCK_READ(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref;
 
     ref = getFirst();
-    while(ref != NULL)
+    while (ref != NULL)
     {
         ref->addThreatPercent(pValue);
         ref = ref->next();
@@ -75,11 +70,10 @@ void HostileRefManager::addThreatPercent(int32 pValue)
 
 void HostileRefManager::setOnlineOfflineState(bool pIsOnline)
 {
-    MAPLOCK_READ(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref;
 
     ref = getFirst();
-    while(ref != NULL)
+    while (ref != NULL)
     {
         ref->setOnlineOfflineState(pIsOnline);
         ref = ref->next();
@@ -91,9 +85,8 @@ void HostileRefManager::setOnlineOfflineState(bool pIsOnline)
 
 void HostileRefManager::updateThreatTables()
 {
-    MAPLOCK_READ(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref = getFirst();
-    while(ref)
+    while (ref)
     {
         ref->updateOnlineStatus();
         ref = ref->next();
@@ -106,9 +99,8 @@ void HostileRefManager::updateThreatTables()
 
 void HostileRefManager::deleteReferences()
 {
-    MAPLOCK_WRITE(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref = getFirst();
-    while(ref)
+    while (ref)
     {
         HostileReference* nextRef = ref->next();
         ref->removeReference();
@@ -122,12 +114,11 @@ void HostileRefManager::deleteReferences()
 
 void HostileRefManager::deleteReferencesForFaction(uint32 faction)
 {
-    MAPLOCK_WRITE(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref = getFirst();
-    while(ref)
+    while (ref)
     {
         HostileReference* nextRef = ref->next();
-        if(ref->getSource()->getOwner()->getFactionTemplateEntry()->faction == faction)
+        if (ref->getSource()->getOwner()->getFactionTemplateEntry()->faction == faction)
         {
             ref->removeReference();
             delete ref;
@@ -139,14 +130,13 @@ void HostileRefManager::deleteReferencesForFaction(uint32 faction)
 //=================================================
 // delete one reference, defined by Unit
 
-void HostileRefManager::deleteReference(Unit *pCreature)
+void HostileRefManager::deleteReference(Unit* pCreature)
 {
-    MAPLOCK_WRITE(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref = getFirst();
-    while(ref)
+    while (ref)
     {
         HostileReference* nextRef = ref->next();
-        if(ref->getSource()->getOwner() == pCreature)
+        if (ref->getSource()->getOwner() == pCreature)
         {
             ref->removeReference();
             delete ref;
@@ -159,14 +149,13 @@ void HostileRefManager::deleteReference(Unit *pCreature)
 //=================================================
 // set state for one reference, defined by Unit
 
-void HostileRefManager::setOnlineOfflineState(Unit *pCreature,bool pIsOnline)
+void HostileRefManager::setOnlineOfflineState(Unit* pCreature, bool pIsOnline)
 {
-    MAPLOCK_READ(iOwner, MAP_LOCK_TYPE_DEFAULT);
     HostileReference* ref = getFirst();
-    while(ref)
+    while (ref)
     {
         HostileReference* nextRef = ref->next();
-        if(ref->getSource()->getOwner() == pCreature)
+        if (ref->getSource()->getOwner() == pCreature)
         {
             ref->setOnlineOfflineState(pIsOnline);
             break;
@@ -177,7 +166,6 @@ void HostileRefManager::setOnlineOfflineState(Unit *pCreature,bool pIsOnline)
 
 Unit* HostileRefManager::GetThreatRedirectionTarget() const
 {
-    MAPLOCK_READ(iOwner, MAP_LOCK_TYPE_DEFAULT);
     return m_redirectionTargetGuid ? iOwner->GetMap()->GetUnit(m_redirectionTargetGuid) : NULL;
 }
 

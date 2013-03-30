@@ -21,12 +21,25 @@
 #include "SpellAuraDefines.h"
 #include "ProgressBar.h"
 #include "DBCStores.h"
+#include "SQLStorages.h"
 #include "World.h"
 #include "Chat.h"
 #include "Spell.h"
-#include "BattleGroundMgr.h"
+#include "BattleGround/BattleGroundMgr.h"
 #include "MapManager.h"
 #include "Unit.h"
+
+bool IsPrimaryProfessionSkill(uint32 skill)
+{
+    SkillLineEntry const *pSkill = sSkillLineStore.LookupEntry(skill);
+    if(!pSkill)
+        return false;
+
+    if(pSkill->categoryId != SKILL_CATEGORY_PROFESSION)
+        return false;
+
+    return true;
+}
 
 SpellMgr::SpellMgr()
 {
@@ -118,7 +131,7 @@ uint32 GetSpellCastTime(SpellEntry const* spellInfo, Spell const* spell)
             castTime /= 2;
 
         if (Player* modOwner = spell->GetCaster()->GetSpellModOwner())
-            modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_CASTING_TIME, castTime, spell);
+            modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_CASTING_TIME, castTime);
 
         if (!(spellInfo->Attributes & (SPELL_ATTR_ABILITY|SPELL_ATTR_TRADESPELL)))
             castTime = int32(castTime * spell->GetCaster()->GetFloatValue(UNIT_MOD_CAST_SPEED));
@@ -323,14 +336,12 @@ WeaponAttackType GetWeaponAttackType(SpellEntry const *spellInfo)
 bool IsPassiveSpell(uint32 spellId)
 {
     SpellEntry const *spellInfo = sSpellStore.LookupEntry(spellId);
-    if (!spellInfo)
-        return false;
     return IsPassiveSpell(spellInfo);
 }
 
-bool IsPassiveSpell(SpellEntry const *spellInfo)
+bool IsPassiveSpell(SpellEntry const* spellInfo)
 {
-    return spellInfo->HasAttribute(SPELL_ATTR_PASSIVE);
+    return spellInfo ? spellInfo->HasAttribute(SPELL_ATTR_PASSIVE) : false;
 }
 
 bool IsNoStackAuraDueToAura(uint32 spellId_1, uint32 spellId_2)
@@ -441,20 +452,20 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
         case SPELLFAMILY_MAGE:
         {
             // family flags 18(Molten), 25(Frost/Ice), 28(Mage)
-            if (spellInfo->SpellFamilyFlags.test<CF_MAGE_MOLTEN_ARMOR1, CF_MAGE_ELEMENTAL_ARMOR, CF_MAGE_MAGE_ARMOR>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_MAGE_MOLTEN_ARMOR1, CF_MAGE_ELEMENTAL_ARMOR, CF_MAGE_MAGE_ARMOR>())
                 return SPELL_MAGE_ARMOR;
 
-            if (spellInfo->SpellFamilyFlags.test<CF_MAGE_POLYMORPH>() && spellInfo->EffectApplyAuraName[EFFECT_INDEX_0] == SPELL_AURA_MOD_CONFUSE)
+            if (spellInfo->GetSpellFamilyFlags().test<CF_MAGE_POLYMORPH>() && spellInfo->EffectApplyAuraName[EFFECT_INDEX_0] == SPELL_AURA_MOD_CONFUSE)
                 return SPELL_MAGE_POLYMORPH;
 
-            if (spellInfo->SpellFamilyFlags.test<CF_MAGE_ARCANE_INT>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_MAGE_ARCANE_INT>())
                 return SPELL_MAGE_INTELLECT;
 
             break;
         }
         case SPELLFAMILY_WARRIOR:
         {
-            if (spellInfo->SpellFamilyFlags.test<CF_WARRIOR_BATTLE_SHOUT, CF_WARRIOR_COMMANDING_SHOUT>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_WARRIOR_BATTLE_SHOUT, CF_WARRIOR_COMMANDING_SHOUT>())
                 return SPELL_POSITIVE_SHOUT;
 
             break;
@@ -466,11 +477,11 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
                 return SPELL_CURSE;
 
             // Warlock (Demon Armor | Demon Skin | Fel Armor)
-            if (spellInfo->SpellFamilyFlags.test<CF_WARLOCK_ARMOR, CF_WARLOCK_FEL_ARMOR, CF_WARLOCK_DEMON_SKIN>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_WARLOCK_ARMOR, CF_WARLOCK_FEL_ARMOR, CF_WARLOCK_DEMON_SKIN>())
                 return SPELL_WARLOCK_ARMOR;
 
             // Unstable Affliction | Immolate
-            if (spellInfo->SpellFamilyFlags.test<CF_WARLOCK_IMMOLATE, CF_WARLOCK_UNSTABLE_AFFLICTION>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_WARLOCK_IMMOLATE, CF_WARLOCK_UNSTABLE_AFFLICTION>())
                 return SPELL_UA_IMMOLATE;
             break;
         }
@@ -490,7 +501,7 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
                 return SPELL_STING;
 
             // only hunter aspects have this
-            if (spellInfo->SpellFamilyFlags.test<CF_HUNTER_ASPECT_OF_THE_MONKEY, CF_HUNTER_ASPECT_OF_THE_HAWK, CF_HUNTER_ASPECT_OF_THE_PACK, CF_HUNTER_ASPECT_OF_THE_VIPER, CF_HUNTER_ASPECT_OF_THE_WILD, CF_HUNTER_ASPECT_OF_THE_BEAST, CF_HUNTER_ASPECT_OF_THE_DRAGONHAWK>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_HUNTER_ASPECT_OF_THE_MONKEY, CF_HUNTER_ASPECT_OF_THE_HAWK, CF_HUNTER_ASPECT_OF_THE_PACK, CF_HUNTER_ASPECT_OF_THE_VIPER, CF_HUNTER_ASPECT_OF_THE_WILD, CF_HUNTER_ASPECT_OF_THE_BEAST, CF_HUNTER_ASPECT_OF_THE_DRAGONHAWK>())
                 return SPELL_ASPECT;
 
             break;
@@ -500,19 +511,19 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
             if (IsSealSpell(spellInfo))
                 return SPELL_SEAL;
 
-            if (spellInfo->SpellFamilyFlags.test<CF_PALADIN_BLESSING_OF_MIGHT, CF_PALADIN_BLESSING_OF_WISDOM, CF_PALADIN_BLESSING_OF_KINGS, CF_PALADIN_MISC_BLESSINGS>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_PALADIN_BLESSING_OF_MIGHT, CF_PALADIN_BLESSING_OF_WISDOM, CF_PALADIN_BLESSING_OF_KINGS, CF_PALADIN_MISC_BLESSINGS>())
                 return SPELL_BLESSING;
 
-            if (spellInfo->SpellFamilyFlags.test<CF_PALADIN_HAND_OF_FREEDOM, CF_PALADIN_HAND_OF_PROTECTION, CF_PALADIN_HAND_OF_SALVATION1, CF_PALADIN_HAND_OF_SACRIFICE>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_PALADIN_HAND_OF_FREEDOM, CF_PALADIN_HAND_OF_PROTECTION, CF_PALADIN_HAND_OF_SALVATION1, CF_PALADIN_HAND_OF_SACRIFICE>())
                 return SPELL_HAND;
 
             // skip Heart of the Crusader and Judgements of the Just that have also same spell family mask
-            if (spellInfo->SpellFamilyFlags.test<CF_PALADIN_JUDGEMENT_OF_RIGHT, CF_PALADIN_JUDGEMENT_OF_WISDOM_LIGHT, CF_PALADIN_JUDGEMENT_OF_JUSTICE, CF_PALADIN_HEART_OF_THE_CRUSADER, CF_PALADIN_JUDGEMENT_OF_BLOOD_MARTYR>() &&
-                (spellInfo->HasAttribute(SPELL_ATTR_EX3_UNK9) && !spellInfo->SpellFamilyFlags.test<CF_PALADIN_HEART_OF_THE_CRUSADER,CF_PALADIN_JUDGEMENT_OF_JUST>()))
+            if (spellInfo->GetSpellFamilyFlags().test<CF_PALADIN_JUDGEMENT_OF_RIGHT, CF_PALADIN_JUDGEMENT_OF_WISDOM_LIGHT, CF_PALADIN_JUDGEMENT_OF_JUSTICE, CF_PALADIN_HEART_OF_THE_CRUSADER, CF_PALADIN_JUDGEMENT_OF_BLOOD_MARTYR>() &&
+                (spellInfo->HasAttribute(SPELL_ATTR_EX3_UNK9) && !spellInfo->GetSpellFamilyFlags().test<CF_PALADIN_HEART_OF_THE_CRUSADER,CF_PALADIN_JUDGEMENT_OF_JUST>()))
                 return SPELL_JUDGEMENT;
 
             // only paladin auras have this (for palaldin class family)
-            if (spellInfo->SpellFamilyFlags.test<CF_PALADIN_AURAS>())
+            if (spellInfo->GetSpellFamilyFlags().test<CF_PALADIN_AURAS>())
                 return SPELL_AURA;
 
             break;
@@ -717,6 +728,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
         case 39290:                                         // Kargath's Executioner
         case 66550:                                         // Teleport(BattlegroundIC)
         case 66551:                                         // Teleport(BattlegroundIC)
+        case 62910:                                         // Mimiron's Inferno (Ulduar - Flame Leviathan)
             return false;
         case 552:                                           // Abolish Disease
         case 12042:                                         // Arcane Power
@@ -750,9 +762,11 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
             switch(spellproto->Id)
             {
                 case 28441:                                 // AB Effect 000
+                case 52748:                                 // Voracious Appetite
+                case 54044:                                 // Carrion Feeder
                     return false;
+                case 18153:                                 // Kodo Kombobulator
                 case 48021:                                 // support for quest 12173
-                    return true;
                 case 49634:                                 // Sergeant's Flare
                 case 54530:                                 // Opening
                 case 62105:                                 // To'kini's Blowgun
@@ -768,6 +782,8 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
         case SPELL_EFFECT_HEAL_PCT:
         case SPELL_EFFECT_ENERGIZE_PCT:
         case SPELL_EFFECT_QUEST_COMPLETE:
+        case SPELL_EFFECT_KILL_CREDIT_PERSONAL:
+        case SPELL_EFFECT_KILL_CREDIT_GROUP:
             return true;
 
         case SPELL_EFFECT_SCHOOL_DAMAGE:
@@ -830,6 +846,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                         case 27201:
                         case 27202:
                         case 27203:
+                        case 47669:
                             return true;
                         default:
                             break;
@@ -997,6 +1014,13 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                             break;
                     }
                     break;
+                }
+                case SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT:
+                {
+                    if (spellproto->CalculateSimpleValue(effIndex) < 0)
+                        return true;
+                    else
+                        return false;
                 }
                 default:
                     break;
@@ -1189,22 +1213,20 @@ void SpellMgr::LoadSpellTargetPositions()
 
         uint32 Spell_ID = fields[0].GetUInt32();
 
-        SpellTargetPosition st;
+        WorldLocation st = WorldLocation(fields[1].GetUInt32(),
+                                         fields[2].GetFloat(),
+                                         fields[3].GetFloat(),
+                                         fields[4].GetFloat(),
+                                         fields[5].GetFloat());
 
-        st.target_mapId       = fields[1].GetUInt32();
-        st.target_X           = fields[2].GetFloat();
-        st.target_Y           = fields[3].GetFloat();
-        st.target_Z           = fields[4].GetFloat();
-        st.target_Orientation = fields[5].GetFloat();
-
-        MapEntry const* mapEntry = sMapStore.LookupEntry(st.target_mapId);
+        MapEntry const* mapEntry = sMapStore.LookupEntry(st.GetMapId());
         if (!mapEntry)
         {
-            sLog.outErrorDb("Spell (ID:%u) target map (ID: %u) does not exist in `Map.dbc`.",Spell_ID,st.target_mapId);
+            sLog.outErrorDb("Spell (ID:%u) target map (ID: %u) does not exist in `Map.dbc`.",Spell_ID,st.GetMapId());
             continue;
         }
 
-        if (st.target_X==0 && st.target_Y==0 && st.target_Z==0)
+        if (st.IsEmpty())
         {
             sLog.outErrorDb("Spell (ID:%u) target coordinates not provided.",Spell_ID);
             continue;
@@ -1220,13 +1242,16 @@ void SpellMgr::LoadSpellTargetPositions()
         bool found = false;
         for(int i = 0; i < MAX_EFFECT_INDEX; ++i)
         {
-            if (spellInfo->EffectImplicitTargetA[i] == TARGET_TABLE_X_Y_Z_COORDINATES || spellInfo->EffectImplicitTargetB[i] == TARGET_TABLE_X_Y_Z_COORDINATES ||
+            if (spellInfo->EffectImplicitTargetA[i] == TARGET_TABLE_X_Y_Z_COORDINATES || 
+                spellInfo->EffectImplicitTargetB[i] == TARGET_TABLE_X_Y_Z_COORDINATES ||
+                spellInfo->EffectImplicitTargetA[i] == TARGET_SCRIPT_COORDINATES || 
+                spellInfo->EffectImplicitTargetB[i] == TARGET_SCRIPT_COORDINATES ||
                 spellInfo->EffectImplicitTargetB[i] == TARGET_SELF2)
             {
                 // additional requirements
-                if (spellInfo->Effect[i]==SPELL_EFFECT_BIND && spellInfo->EffectMiscValue[i])
+                if (spellInfo->Effect[i] == SPELL_EFFECT_BIND && spellInfo->EffectMiscValue[i])
                 {
-                    uint32 zone_id = sTerrainMgr.GetAreaId(st.target_mapId, st.target_X, st.target_Y, st.target_Z);
+                    uint32 zone_id = st.GetZoneId();
                     if (int32(zone_id) != spellInfo->EffectMiscValue[i])
                     {
                         sLog.outErrorDb("Spell (Id: %u) listed in `spell_target_position` expected point to zone %u bit point to zone %u.",Spell_ID, spellInfo->EffectMiscValue[i], zone_id);
@@ -1377,8 +1402,9 @@ struct DoSpellProcEvent
 
         if (spe.procFlags == 0)
         {
-            if (spell->procFlags==0)
-                sLog.outErrorDb("Spell %u listed in `spell_proc_event` probally not triggered spell (no proc flags)", spell->Id);
+            if (spell->procFlags == 0)
+                DEBUG_LOG("Spell %u listed in `spell_proc_event` probally not triggered spell (no proc flags)", spell->Id);
+            isCustom = true;
         }
         else
         {
@@ -1871,6 +1897,7 @@ void SpellMgr::LoadSpellLinked()
         bar.step();
         uint32 entry       = fields[0].GetUInt32();
         uint32 linkedEntry = fields[1].GetUInt32();
+        uint32 uitype      = fields[2].GetUInt32();
 
         SpellEntry const* spell = sSpellStore.LookupEntry(entry);
         SpellEntry const* spell1 = sSpellStore.LookupEntry(linkedEntry);
@@ -1886,6 +1913,14 @@ void SpellMgr::LoadSpellLinked()
             continue;
         }
 
+        if (uitype >= SPELL_LINKED_TYPE_MAX)
+        {
+            sLog.outErrorDb("Spell %u has no valid type %u", entry, uitype);
+            continue;
+        }
+
+        SpellLinkedType type = SpellLinkedType(uitype);
+
         uint32 first_id = GetFirstSpellInChain(entry);
 
         if ( first_id != entry )
@@ -1897,7 +1932,7 @@ void SpellMgr::LoadSpellLinked()
 
         data.spellId      = entry;
         data.linkedId     = linkedEntry;
-        data.type         = fields[2].GetUInt32();
+        data.type         = type;
         data.effectMask   = fields[3].GetUInt32();
 
         mSpellLinkedMap.insert(SpellLinkedMap::value_type(entry,data));
@@ -1916,6 +1951,8 @@ void SpellMgr::LoadSpellLinked()
 SpellLinkedSet SpellMgr::GetSpellLinked(uint32 spell_id, SpellLinkedType type) const
 {
     SpellLinkedSet result;
+
+    result.clear();
 
     SpellLinkedMapBounds const& bounds = GetSpellLinkedMapBounds(spell_id);
 
@@ -2169,7 +2206,7 @@ bool SpellMgr::canStackSpellRanksInSpellBook(SpellEntry const *spellInfo) const
                 if (spellInfo->Effect[i]==SPELL_EFFECT_APPLY_AREA_AURA_RAID)
                     return false;
                 // Seal of Righteousness, 2 version of same rank
-                if (spellInfo->SpellFamilyFlags.test<CF_PALADIN_SEAL_OF_JUST_RIGHT>() && spellInfo->SpellIconID == 25)
+                if (spellInfo->GetSpellFamilyFlags().test<CF_PALADIN_SEAL_OF_JUST_RIGHT>() && spellInfo->SpellIconID == 25)
                     return false;
                 break;
             case SPELLFAMILY_DRUID:
@@ -2191,34 +2228,34 @@ bool SpellMgr::canStackSpellRanksInSpellBook(SpellEntry const *spellInfo) const
 
 bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) const
 {
-    SpellEntry const *spellInfo_1 = sSpellStore.LookupEntry(spellId_1);
-    SpellEntry const *spellInfo_2 = sSpellStore.LookupEntry(spellId_2);
+    if (spellId_1 == spellId_2)
+        return false;
+
+    SpellEntry const* spellInfo_1 = sSpellStore.LookupEntry(spellId_1);
+    SpellEntry const* spellInfo_2 = sSpellStore.LookupEntry(spellId_2);
 
     if (!spellInfo_1 || !spellInfo_2)
         return false;
 
-    if(spellId_1 == spellId_2)
-        return false;
+    #define MatchedSpellIdPair(Id_1, Id_2) ((spellInfo_1->Id == Id_1 && spellInfo_2->Id == Id_2) || (spellInfo_1->Id == Id_2 && spellInfo_2->Id == Id_1))
+    #define MatchedIconIdPair(Id_1, Id_2) ((spellInfo_1->SpellIconID == Id_1 && spellInfo_2->SpellIconID == Id_2) || (spellInfo_1->SpellIconID == Id_2 && spellInfo_2->SpellIconID == Id_1))
 
     // Specific spell family spells
     // also some SpellIconID exceptions related to late checks (isModifier)
-    switch(spellInfo_1->SpellFamilyName)
+    switch (spellInfo_1->SpellFamilyName)
     {
         case SPELLFAMILY_GENERIC:
         {
             // BG_WS_SPELL_FOCUSED_ASSAULT & BG_WS_SPELL_BRUTAL_ASSAULT
-            if ((spellInfo_1->Id == 46392 && spellInfo_2->Id == 46393) ||
-                (spellInfo_1->Id == 46393 && spellInfo_2->Id == 46392))
+            if (MatchedSpellIdPair(46392, 46393))
                 return true;
 
             // Dark Essence & Light Essence
-            if ((spellInfo_1->Id == 65684 && spellInfo_2->Id == 65686) ||
-                (spellInfo_2->Id == 65684 && spellInfo_1->Id == 65686))
+            if (MatchedSpellIdPair(65684, 65686))
                 return true;
 
-            //Potent Fungus and Mini must remove each other (Amanitar encounter, Ahn'kahet)
-            if ((spellInfo_1->Id == 57055 && spellInfo_2->Id == 56648) ||
-                (spellInfo_2->Id == 57055 && spellInfo_1->Id == 56648))
+            // Potent Fungus and Mini must remove each other (Amanitar encounter, Ahn'kahet)
+            if (MatchedSpellIdPair(57055, 56648))
                 return true;
 
             // Mirrored Soul (FoS - Devourer) - and other Boss spells
@@ -2228,20 +2265,18 @@ bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) cons
             // Blessing of Forgotten Kings and (Greater) Blessing of Kings
             if (spellInfo_1->Id == 72586)
             {
-                if (spellInfo_2->SpellFamilyFlags.test<CF_PALADIN_BLESSING_OF_KINGS>())
+                if (spellInfo_2->GetSpellFamilyFlags().test<CF_PALADIN_BLESSING_OF_KINGS>())
                     return true;
             }
-
             break;
         }
         case SPELLFAMILY_WARLOCK:
             if (spellInfo_2->SpellFamilyName == SPELLFAMILY_WARLOCK)
             {
-                //Corruption & Seed of corruption
-                if ((spellInfo_1->SpellIconID == 313 && spellInfo_2->SpellIconID == 1932) ||
-                    (spellInfo_2->SpellIconID == 313 && spellInfo_1->SpellIconID == 1932))
+                // Corruption & Seed of corruption
+                if (MatchedIconIdPair(313, 1932))
                 {
-                    if(spellInfo_1->SpellVisual[0] != 0 && spellInfo_2->SpellVisual[0] != 0)
+                    if (spellInfo_1->SpellVisual[0] != 0 && spellInfo_2->SpellVisual[0] != 0)
                         return true;                        // can't be stacked
                 }
             }
@@ -2250,7 +2285,7 @@ bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) cons
             if (spellInfo_2->SpellFamilyName == SPELLFAMILY_WARRIOR)
             {
                 // Defensive/Berserker/Battle stance aura can not stack (needed for dummy auras)
-                if (spellInfo_1->SpellFamilyFlags.test<CF_WARRIOR_STANCES>() && spellInfo_2->SpellFamilyFlags.test<CF_WARRIOR_STANCES>())
+                if (spellInfo_1->GetSpellFamilyFlags().test<CF_WARRIOR_STANCES>() && spellInfo_2->GetSpellFamilyFlags().test<CF_WARRIOR_STANCES>())
                     return true;
             }
             break;
@@ -2276,7 +2311,7 @@ bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) cons
             }
 
             // Blessing of Forgotten Kings and (Greater) Blessing of Kings
-            if (spellInfo_1->SpellFamilyFlags.test<CF_PALADIN_BLESSING_OF_KINGS>())
+            if (spellInfo_1->GetSpellFamilyFlags().test<CF_PALADIN_BLESSING_OF_KINGS>())
             {
                 if (spellInfo_2->Id == 72586)
                     return true;
@@ -2287,8 +2322,7 @@ bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) cons
             if (spellInfo_2->SpellFamilyName == SPELLFAMILY_DEATHKNIGHT)
             {
                 // Crypt Fever and Ebon Plague
-                if((spellInfo_1->SpellIconID == 264 && spellInfo_2->SpellIconID == 1933) ||
-                   (spellInfo_2->SpellIconID == 264 && spellInfo_1->SpellIconID == 1933))
+                if (MatchedIconIdPair(264, 1933))
                     return true;
             }
             break;
@@ -2464,6 +2498,482 @@ bool SpellMgr::IsGroupBuff(SpellEntry const *spellInfo)
     return false;
 }
 
+bool SpellMgr::IsTargetMatchedWithCreatureType(SpellEntry const* pSpellInfo, Unit* pTarget)
+{
+    uint32 spellCreatureTargetMask = pSpellInfo->TargetCreatureType;
+
+    if (IsSpellWithCasterSourceTargetsOnly(pSpellInfo))
+        return true;
+
+    // Curse of Doom: not find another way to fix spell target check :/
+    if (pSpellInfo->SpellFamilyName == SPELLFAMILY_WARLOCK && pSpellInfo->Category == 1179)
+    {
+        // not allow cast at player
+        if (pTarget->GetTypeId() == TYPEID_PLAYER)
+            return false;
+
+        spellCreatureTargetMask = 0x7FF;
+    }
+
+    // Dismiss Pet and Taming Lesson skipped
+    if (pSpellInfo->Id == 2641 || pSpellInfo->Id == 23356)
+        spellCreatureTargetMask =  0;
+
+    // skip creature type check for Grounding Totem
+    if (pTarget->GetUInt32Value(UNIT_CREATED_BY_SPELL) == 8177)
+        return true;
+
+    if (spellCreatureTargetMask)
+    {
+        uint32 TargetCreatureType = pTarget->GetCreatureTypeMask();
+
+        return !TargetCreatureType || (spellCreatureTargetMask & TargetCreatureType);
+    }
+    return true;
+}
+
+bool SpellMgr::IsReflectableSpell(SpellEntry const* spellInfo)
+{
+    // AoE spells, spells with non-magic DmgClass or SchoolMask or with SPELL_ATTR_EX2_CANT_REFLECTED cannot be reflected
+    if (spellInfo->DmgClass == SPELL_DAMAGE_CLASS_MAGIC &&
+        spellInfo->SchoolMask != SPELL_SCHOOL_MASK_NORMAL &&
+        !spellInfo->HasAttribute(SPELL_ATTR_EX2_IGNORE_LOS) &&
+        !spellInfo->HasAttribute(SPELL_ATTR_EX_CANT_REFLECTED) &&
+        !IsAreaOfEffectSpell(spellInfo))
+    {
+        for(int j = 0; j < MAX_EFFECT_INDEX; ++j)
+        {
+            if (spellInfo->Effect[j] == SPELL_EFFECT_NONE)
+                continue;
+
+            if (IsPositiveTarget(spellInfo->EffectImplicitTargetA[j], spellInfo->EffectImplicitTargetB[j]) && !spellInfo->HasAttribute(SPELL_ATTR_EX_NEGATIVE))
+                continue;
+            else
+                return true;
+        }
+    }
+    return false;
+}
+
+uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit const* caster)
+{
+    // Get spell max affected targets
+    uint32 unMaxTargets = spellInfo->MaxAffectedTargets;
+    // custom target amount cases
+    switch(spellInfo->SpellFamilyName)
+    {
+        case SPELLFAMILY_GENERIC:
+        {
+            switch(spellInfo->Id)
+            {
+                case 802:                                   // Mutate Bug
+                case 804:                                   // Explode Bug
+                case 23138:                                 // Gate of Shazzrah
+                case 28560:                                 // Summon Blizzard
+                case 30541:                                 // Blaze (Magtheridon)
+                case 30572:                                 // Quake (Magtheridon)
+                case 30769:                                 // Pick Red Riding Hood
+                case 30835:                                 // Infernal Relay
+                case 31347:                                 // Doom TODO: exclude top threat target from target selection
+                case 33711:                                 // Murmur's Touch
+                case 38794:                                 // Murmur's Touch (h)
+                case 44869:                                 // Spectral Blast
+                case 45892:                                 // Sinister Reflection (SWP, Kil'jaeden)
+                case 45976:                                 // Open Portal
+                case 46293:                                 // Corrosive Poison
+                case 46294:                                 // Fevered Fatigue
+                case 46295:                                 // Hex
+                case 46296:                                 // Necrotic Poison
+                case 46297:                                 // Piercing Shadow
+                case 46298:                                 // Shrink
+                case 46299:                                 // Wavering Will
+                case 46300:                                 // Withered Touch
+                case 47669:                                 // Wakeup Subboss (Utgarde Pinnacle)
+                case 48278:                                 // Paralyze (Utgarde Pinnacle)
+                case 50988:                                 // Glare of the Tribunal (Halls of Stone)
+                case 50742:                                 // Ooze Combine (Halls of Stone)
+                case 51003:                                 // Summon Dark Matter Target (Halls of Stone)
+                case 51146:                                 // Summon Searching Gaze (Halls Of Stone)
+                case 52438:                                 // Summon Skittering Swarmer (Azjol Nerub,  Krik'thir the Gatewatcher)
+                case 52449:                                 // Summon Skittering Infector (Azjol Nerub,  Krik'thir the Gatewatcher)
+                case 53457:                                 // Impale (Azjol Nerub,  Anub'arak)
+                case 54148:                                 // Ritual of the Sword (Utgarde Pinnacle, Svala)
+                case 55479:                                 // Forced Obedience (Naxxramas, Razovius)
+                case 56140:                                 // Summon Power Spark (Eye of Eternity, Malygos)
+                case 59870:                                 // Glare of the Tribunal (h) (Halls of Stone)
+                case 62978:                                 // Summon Guardian (Ulduar - Yogg Saron)
+                case 63713:                                 // Dominate Mind (Ulduar - Yogg Saron)
+                case 63830:                                 // Malady of the Mind (Ulduar - Yogg Saron)
+                case 64465:                                 // Shadow Beacon (Ulduar - Yogg Saron)
+                case 62016:                                 // Charge Orb (Ulduar, Thorim)
+                case 62042:                                 // Stormhammer (Ulduar, Thorim)
+                case 62166:                                 // StoneGrip nh
+                case 62301:                                 // Cosmic Smash (Ulduar, Algalon)
+                case 62374:                                 // Pursued (Ulduar, Flame Leviathan)
+                case 62400:                                 // Missile Barrage (Ulduar, Flame Leviathan)
+                case 62488:                                 // Activate Construct (Ulduar, Ignis)
+                case 63018:                                 // Searing Light
+                case 63024:                                 // Gravity Bomb (Ulduar, XT-002)
+                case 63342:                                 // Focused Eyebeam Summon Trigger (Ulduar, Kologarn)
+                case 63387:                                 // Rapid Burst
+                case 63545:                                 // Icicle Hodir(trigger spell from 62227)
+                case 63795:                                 // Psychosis (Ulduar, Yogg-Saron)
+                case 63820:                                 // Summon Scrap Bot Trigger (Ulduar, Mimiron) use for Scrap Bots, hits npc 33856
+                case 64218:                                 // Overcharge
+                case 64234:                                 // Gravity Bomb (h) (Ulduar, XT-002)
+                case 64425:                                 // Summon Scrap Bot Trigger (Ulduar, Mimiron) use for Assault Bots, hits npc 33856
+                case 64531:                                 // Rapid Burst (h)
+                case 64562:                                 // Summon Flames Spread Trigger (Ulduar, Mimiron)
+                case 64623:                                 // Frost Bomb (Ulduar, Mimiron)
+                case 65121:                                 // Searing Light (h)
+                case 65301:                                 // Psychosis (Ulduar, Yogg-Saron)
+                case 65872:                                 // Pursuing Spikes
+                case 65950:                                 // Touch of Light (ToCrusader, Val'kyr Twins)
+                case 66001:                                 // Touch of Darkness (ToCrusader, Val'kyr Twins)
+                case 66152:                                 // Bullet Controller Summon Periodic Trigger Light (ToCrusader)
+                case 66153:                                 // Bullet Controller Summon Periodic Trigger Dark (ToCrusader)
+                case 66332:                                 // Nerubian Burrower (Mode 0) (ToCrusader, Anub'arak)
+                case 66336:                                 // Mistress' Kiss (ToCrusader, Jaraxxus)
+                case 66339:                                 // Summon Scarab (ToCrusader, Anub'arak)
+                case 67077:                                 // Mistress' Kiss (Mode 2) (ToCrusader, Jaraxxus)
+                case 67281:                                 // Touch of Darkness (Mode 1)
+                case 67282:                                 // Touch of Darkness (Mode 2)
+                case 67283:                                 // Touch of Darkness (Mode 3)
+                case 67296:                                 // Touch of Light (Mode 1)
+                case 67297:                                 // Touch of Light (Mode 2)
+                case 67298:                                 // Touch of Light (Mode 3)
+                case 67470:                                 // Pursuing Spikes
+                case 68950:                                 // Fear (FoS)
+                case 68912:                                 // Wailing Souls (FoS)
+                case 68987:                                 // Pursuit (Pit of Saron, Ick)
+                case 69048:                                 // Mirrored Soul (FoS)
+                case 69057:                                 // Bone Spike Graveyard (Icecrown Citadel, Lord Marrowgar) 10 mann
+                case 72088:
+                case 73142:
+                case 73144:
+                case 69140:                                 // Coldflame (ICC, Marrowgar)
+                case 69674:                                 // Mutated Infection (ICC, Rotface)
+                case 71224:                                 // Mutated Infection
+                case 73022:                                 // Mutated Infection
+                case 73023:                                 // Mutated Infection
+                case 70447:                                 // Volatile Ooze Adhesive (ICC -Putricide)
+                case 72836:
+                case 72837:
+                case 72838:
+                case 70450:                                 // Blood Mirror
+                case 70837:                                 // Blood Mirror
+                case 70672:                                 // Gaseous Bloat (ICC, Professor Putricide)
+                case 72455:
+                case 72832:
+                case 72833:
+                case 70882:                                 // Slime Spray Summon Trigger (ICC, Rotface)
+                case 70911:                                 // Unbound Plague (ICC, Putricide)
+                case 72854:
+                case 72855:
+                case 72856:
+                case 70920:                                 // Unbound Plague Search Effect (ICC, Putricide)
+                case 71445:                                 // Twilight Bloodbolt
+                case 71471:                                 // Twilight Bloodbolt
+                case 71837:                                 // Vampiric Bite
+                case 71861:                                 // Swarming Shadows
+                case 72091:                                 // Frozen Orb (Vault of Archavon, Toravon)
+                case 72254:                                 // Mark of the fallen Champion Search Spell
+                case 72295:                                 // Malleable Goo (ICC -Professor Putricide)
+                case 74280:
+                case 72378:                                 // Blood Nova (Saurfang)
+                case 73058:
+                case 72385:                                 // Boiling Blood
+                case 72441:
+                case 72442:
+                case 72443:
+                    unMaxTargets = 1;
+                    break;
+                case 28542:                                 // Life Drain
+                case 62476:                                 // Icicle (Hodir 10man)
+                case 63476:                                 // Icicle (Hodir - 10)
+                case 66013:                                 // Penetrating Cold (10 man)
+                case 67755:                                 // Nerubian Burrower (Mode 1) (ToCrusader, Anub'arak)
+                case 67756:                                 // Nerubian Burrower (Mode 2) (ToCrusader, Anub'arak)
+                case 68509:                                 // Penetrating Cold (10 man heroic)
+                case 69055:                                 // Bone Slice (ICC, Lord Marrowgar)
+                case 69278:                                 // Gas spore (ICC, Festergut)
+                case 70341:                                 // Slime Puddle (ICC, Putricide)
+                case 71424:                                 // Slime Puddle (ICC, Putricide) Search Spell
+                case 72615:                                 // Malleable Goo (ICC -Professor Putricide)
+                case 74281:
+                    unMaxTargets = 2;
+                    break;
+                case 28796:                                 // Poison Bolt Volley
+                case 29213:                                 // Curse of the Plaguebringer
+                case 30004:                                 // Flame Wreath
+                case 31298:                                 // Sleep
+                case 39992:                                 // Needle Spine Targeting (BT, Warlord Najentus)
+                case 41303:                                 // Soul Drain (BT, Reliquary of Souls)
+                case 41376:                                 // Spite (BT, Reliquary of Souls)
+                case 51904:                                 // Limiting the count of Summoned Ghouls
+                case 54522:
+                case 60936:                                 // Surge of Power (h) (Malygos)
+                case 61693:                                 // Arcane Storm (Malygos)
+                case 62477:                                 // Icicle (Hodir 25man)
+                case 63981:                                 // StoneGrip H
+                case 64598:                                 // Cosmic Smash (h) (Ulduar, Algalon)
+                case 64620:                                 // Summon Fire Bot Trigger (Ulduar, Mimiron) hits npc 33856
+                case 70814:                                 // Bone Slice (ICC, Lord Marrowgar, heroic)
+                case 71221:                                 // Gas spore (Mode 1) (ICC, Festergut)
+                case 72095:                                 // Frozen Orb (h) (Vault of Archavon, Toravon)
+                case 72089:                                 // Bone Spike Graveyard (Icecrown Citadel, Lord Marrowgar) 25 mann
+                case 70826:
+                case 73143:
+                case 73145:
+                    unMaxTargets = 3;
+                    break;
+                case 37676:                                 // Insidious Whisper
+                case 38028:                                 // Watery Grave
+                case 67757:                                 // Nerubian Burrower (Mode 3) (ToCrusader, Anub'arak)
+                    unMaxTargets = 4;
+                    break;
+                case 30843:                                 // Enfeeble
+                case 40243:                                 // Crushing Shadows (BT, Teron Gorefiend)
+                case 42005:                                 // Bloodboil
+                case 45641:                                 // Fire Bloom (SWP, Kil'jaeden)
+                case 55665:                                 // Life Drain (h)
+                case 58917:                                 // Consume Minions
+                case 64604:                                 // Nature Bomb (Ulduar, Freya)
+                case 67076:                                 // Mistress' Kiss (Mode 1) (ToCrusader, Jaraxxus)
+                case 67078:                                 // Mistress' Kiss (Mode 3) (ToCrusader, Jaraxxus)
+                case 67700:                                 // Penetrating Cold (25 man)
+                case 68510:                                 // Penetrating Cold (25 man, heroic)
+                    unMaxTargets = 5;
+                    break;
+                case 61694:                                 // Arcane Storm (h) (Malygos)
+                    unMaxTargets = 7;
+                    break;
+                case 54098:                                 // Poison Bolt Volley (h)
+                case 54835:                                 // Curse of the Plaguebringer (h)
+                case 66140:                                 // Light Bullet Summon Trigger 10 nonhero (correct from sniff)
+                case 67159:                                 // Light Bullet Summon Trigger 10 hero (maybe wrong amount)
+                    unMaxTargets = 10;
+                    break;
+                case 25991:                                 // Poison Bolt Volley (Pincess Huhuran)
+                case 67158:                                 // Light Bullet Summon Trigger 25 nonhero (maybe wrong amount)
+                case 67160:                                 // Light Bullet Summon Trigger 25 hero (maybe wrong amount)
+                    unMaxTargets = 15;
+                    break;
+                // random count
+                case 61916:                                 // Lightning Whirl (Ulduar, Stormcaller Brundir)
+                    unMaxTargets = urand(2, 3);
+                    break;
+                case 46771:                                 // Flame Sear (SWP, Grand Warlock Alythess)
+                    unMaxTargets = urand(3, 5);
+                    break;
+                case 63482:                                 // Lightning Whirl (h) (Ulduar, Stormcaller Brundir)
+                    unMaxTargets = urand(3, 6);
+                    break;
+                case 74452:                                 // Conflagration (Saviana, Ruby Sanctum) (hack, in 25 mode spell simple casted double time)
+                {
+                    if (caster)
+                    {
+                        switch (caster->GetMap()->GetDifficulty())
+                        {
+                            case RAID_DIFFICULTY_10MAN_NORMAL:
+                            case RAID_DIFFICULTY_10MAN_HEROIC:
+                                unMaxTargets = 2;
+                                break;
+                            case RAID_DIFFICULTY_25MAN_NORMAL:
+                            case RAID_DIFFICULTY_25MAN_HEROIC:
+                                unMaxTargets = 5;
+                                break;
+                        }
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
+        case SPELLFAMILY_MAGE:
+        {
+            if (spellInfo->Id == 38194)                   // Blink
+                unMaxTargets = 1;
+            break;
+        }
+        case SPELLFAMILY_DRUID:
+        {
+            // Starfall
+            if (spellInfo->GetSpellFamilyFlags().test<CF_DRUID_STARFALL2>())
+                unMaxTargets = 2;
+            break;
+        }
+        case SPELLFAMILY_DEATHKNIGHT:
+        {
+            if (spellInfo->SpellIconID == 1737)           // Corpse Explosion // TODO - spell 50445?
+                unMaxTargets = 1;
+            break;
+        }
+        default:
+            break;
+    }
+
+    Unit::AuraList const& mod = caster->GetAurasByType(SPELL_AURA_MOD_MAX_AFFECTED_TARGETS);
+    for(Unit::AuraList::const_iterator m = mod.begin(); m != mod.end(); ++m)
+    {
+        if (!(*m)->isAffectedOnSpell(spellInfo))
+            continue;
+        unMaxTargets += (*m)->GetModifier()->m_amount;
+    }
+
+    return unMaxTargets;
+}
+
+float SpellMgr::GetSpellRadiusWithCustom(SpellEntry const* spellInfo, Unit const* caster, SpellEffectIndex effIndex)
+{
+    float radius;
+    if (spellInfo->EffectRadiusIndex[effIndex])
+        radius = GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[effIndex]));
+    else
+        radius = GetSpellMaxRange(sSpellRangeStore.LookupEntry(spellInfo->rangeIndex));
+
+    switch(spellInfo->SpellFamilyName)
+    {
+        case SPELLFAMILY_GENERIC:
+        {
+            switch(spellInfo->Id)
+            {
+                case 71160:                                 // Plague Stench
+                case 71161:
+                    radius = 30;
+                    break;
+                case 67732:                                 // Destroy all Frost Patches (Trial of the Crusader, Anub'arak)
+                    radius = 9.0f;
+                    break;
+                case 69075:                                 // Bone Storm
+                case 69832:                                 // Unstable Ooze Explosion (Rotface)
+                case 70341:                                 // Slime Puddle (Putricide)
+                case 70541:                                 // Infest (Lich King)
+                case 73779:
+                case 73780:
+                case 73781:
+                case 70834:                                 // Bone Storm
+                case 70835:                                 // Bone Storm
+                case 70836:                                 // Bone Storm
+                case 71518:                                 // Unholy infusion credit
+                case 72289:                                 // Frost infusion credit
+                case 72706:                                 // Valithria event credit
+                case 72254:                                 // Mark of the fallen Champion Search Spell
+                case 72769:                                 // Scent of Blood (Saurfang)
+                case 72771:
+                case 72934:                                 // Blood infusion credit
+                case 69057:                                 // Bone Spike Graveyard (Icecrown Citadel, Lord Marrowgar encounter, 10N)
+                case 70826:                                 // Bone Spike Graveyard (Icecrown Citadel, Lord Marrowgar encounter, 25N)
+                case 72088:                                 // Bone Spike Graveyard (Icecrown Citadel, Lord Marrowgar encounter, 10H)
+                case 72089:                                 // Bone Spike Graveyard (Icecrown Citadel, Lord Marrowgar encounter, 25H)
+                case 73142:                                 // Bone Spike Graveyard (during Bone Storm) (Icecrown Citadel, Lord Marrowgar encounter, 10N)
+                case 73143:                                 // Bone Spike Graveyard (during Bone Storm) (Icecrown Citadel, Lord Marrowgar encounter, 25N)
+                case 73144:                                 // Bone Spike Graveyard (during Bone Storm) (Icecrown Citadel, Lord Marrowgar encounter, 10H)
+                case 73145:                                 // Bone Spike Graveyard (during Bone Storm) (Icecrown Citadel, Lord Marrowgar encounter, 25H)
+                    radius = DEFAULT_VISIBILITY_INSTANCE;
+                    break;
+                case 72350:                                 // Fury of Frostmourne
+                case 72351:                                 // Fury of Frostmourne
+                    radius = 300.0f;
+                    break;
+                // Custom (calculated) radiuses here
+                case 24811:                                 // Draw Spirit (Lethon)
+                {
+                    if (effIndex == EFFECT_INDEX_0)         // Copy range from EFF_1 to 0
+                        radius = GetSpellRadius(sSpellRadiusStore.LookupEntry(spellInfo->EffectRadiusIndex[EFFECT_INDEX_1]));
+                    break;
+                }
+                case 28241:                                 // Poison (Naxxramas, Grobbulus Cloud)
+                case 54363:                                 // Poison (Naxxramas, Grobbulus Cloud) (H)
+                {
+                    uint32 auraId = (spellInfo->Id == 28241 ? 28158 : 54362);
+                    if (SpellAuraHolderPtr auraHolder = caster->GetSpellAuraHolder(auraId))
+                        radius = 0.5f * (60000 - auraHolder->GetAuraDuration()) * 0.001f;
+                    break;
+                }
+                case 66881:                                 // Slime Pool (ToCrusader, Acidmaw & Dreadscale)
+                case 67638:                                 // Slime Pool (ToCrusader, Acidmaw & Dreadscale) (Mode 1)
+                case 67639:                                 // Slime Pool (ToCrusader, Acidmaw & Dreadscale) (Mode 2)
+                case 67640:                                 // Slime Pool (ToCrusader, Acidmaw & Dreadscale) (Mode 3)
+                    if (SpellAuraHolderPtr auraHolder = caster->GetSpellAuraHolder(66882))
+                        radius = 0.5f * (60000 - auraHolder->GetAuraDuration()) * 0.001f;
+                    break;
+                case 56438:                                 // Arcane Overload
+                    radius = radius * caster->GetObjectScale();
+                    break;
+                case 70346:                                 // Slime Puddle (ICC - Professor Putricide)
+                case 72456:
+                case 72868:
+                case 72869:
+                    radius = 5.0f;
+                    if (SpellAuraHolderPtr holder = caster->GetSpellAuraHolder(70347))
+                        radius += holder->GetStackAmount() * 0.2f;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        }
+        case SPELLFAMILY_DRUID:
+        {
+            switch (spellInfo->Id)
+            {
+                case 49376:                                 // Feral Charge - Cat
+                    // No default radius for this spell, so we need to use the contact distance
+                    radius = CONTACT_DISTANCE;
+                    break;
+                default:
+                    break;
+            }
+        }
+        default:
+            break;
+    }
+    if (Player* modOwner = caster->GetSpellModOwner())
+        modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_RADIUS, radius);
+
+    return radius;
+}
+
+uint32 SpellMgr::GetSpellTargetsForChainWithCustom(SpellEntry const* spellInfo, Unit const* caster, SpellEffectIndex effIndex)
+{
+    uint32 effectChainTarget = spellInfo->EffectChainTarget[effIndex];
+
+    switch (spellInfo->SpellFamilyName)
+    {
+        case SPELLFAMILY_WARRIOR:
+        {
+            // Sunder Armor (triggered spell)
+            if (spellInfo->GetSpellFamilyFlags().test<CF_WARRIOR_SUNDER_ARMOR>() && spellInfo->SpellVisual[0] == 0)
+                if (caster->HasAura(58387))               // Glyph of Sunder Armor
+                    effectChainTarget = 2;
+            break;
+        }
+        case SPELLFAMILY_PALADIN:
+        {
+            if (spellInfo->Id == 20424)                   // Seal of Command (2 more target for single targeted spell)
+            {
+                // overwrite EffectChainTarget for non single target spell
+                if (Spell* currSpell = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+                    if (currSpell->m_spellInfo->MaxAffectedTargets > 0 ||
+                        currSpell->m_spellInfo->EffectChainTarget[EFFECT_INDEX_0] > 0 ||
+                        currSpell->m_spellInfo->EffectChainTarget[EFFECT_INDEX_1] > 0 ||
+                        currSpell->m_spellInfo->EffectChainTarget[EFFECT_INDEX_2] > 0)
+                        effectChainTarget = 0;              // no chain targets
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    if (Player* modOwner = caster->GetSpellModOwner())
+        modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_JUMP_TARGETS, effectChainTarget);
+
+    return effectChainTarget;
+}
+
 // is holder stackable from different casters
 bool SpellMgr::IsStackableSpellAuraHolder(SpellEntry const* spellInfo)
 {
@@ -2491,7 +3001,10 @@ bool SpellMgr::IsStackableSpellAuraHolder(SpellEntry const* spellInfo)
             case SPELL_AURA_POWER_BURN_MANA:
             case SPELL_AURA_CONTROL_VEHICLE:
             case SPELL_AURA_MOD_STUN:
+            case SPELL_AURA_PERIODIC_DUMMY:
                 return true;
+            default:
+                continue;
         }
     }
 
@@ -3140,39 +3653,16 @@ void SpellMgr::LoadSpellLearnSpells()
 
 void SpellMgr::LoadSpellScriptTarget()
 {
-    mSpellScriptTarget.clear();                             // need for reload case
+    sSpellScriptTargetStorage.Load();
 
-    uint32 count = 0;
-
-    QueryResult *result = WorldDatabase.Query("SELECT entry,type,targetEntry FROM spell_script_target");
-
-    if (!result)
+    // Check content
+    for (SQLMultiStorage::SQLSIterator<SpellTargetEntry> itr = sSpellScriptTargetStorage.getDataBegin<SpellTargetEntry>(); itr < sSpellScriptTargetStorage.getDataEnd<SpellTargetEntry>(); ++itr)
     {
-        BarGoLink bar(1);
-
-        bar.step();
-
-        sLog.outString();
-        sLog.outErrorDb(">> Loaded 0 SpellScriptTarget. DB table `spell_script_target` is empty.");
-        return;
-    }
-
-    BarGoLink bar(result->GetRowCount());
-
-    do
-    {
-        Field *fields = result->Fetch();
-        bar.step();
-
-        uint32 spellId     = fields[0].GetUInt32();
-        uint32 type        = fields[1].GetUInt32();
-        uint32 targetEntry = fields[2].GetUInt32();
-
-        SpellEntry const* spellProto = sSpellStore.LookupEntry(spellId);
-
+        SpellEntry const* spellProto = sSpellStore.LookupEntry(itr->spellId);
         if (!spellProto)
         {
-            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not exist.",spellId,targetEntry);
+            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not exist.", itr->spellId, itr->targetEntry);
+            sSpellScriptTargetStorage.EraseEntry(itr->spellId);
             continue;
         }
 
@@ -3200,87 +3690,84 @@ void SpellMgr::LoadSpellScriptTarget()
         }
         if (!targetfound)
         {
-            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not have any implicit target TARGET_SCRIPT(38) or TARGET_SCRIPT_COORDINATES (46) or TARGET_FOCUS_OR_SCRIPTED_GAMEOBJECT (40).", spellId, targetEntry);
+            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not have any implicit target TARGET_SCRIPT(38) or TARGET_SCRIPT_COORDINATES (46) or TARGET_FOCUS_OR_SCRIPTED_GAMEOBJECT (40).", itr->spellId, itr->targetEntry);
+            sSpellScriptTargetStorage.EraseEntry(itr->spellId);
             continue;
         }
 
-        if (type >= MAX_SPELL_TARGET_TYPE)
+        if (itr->type >= MAX_SPELL_TARGET_TYPE)
         {
-            sLog.outErrorDb("Table `spell_script_target`: target type %u for TargetEntry %u is incorrect.",type,targetEntry);
+            sLog.outErrorDb("Table `spell_script_target`: target type %u for TargetEntry %u is incorrect.", itr->type, itr->targetEntry);
+            sSpellScriptTargetStorage.EraseEntry(itr->spellId);
             continue;
         }
 
         // Checks by target type
-        switch (type)
+        switch (itr->type)
         {
             case SPELL_TARGET_TYPE_GAMEOBJECT:
             {
-                if (!targetEntry)
+                if (!itr->targetEntry)
                     break;
 
-                if (!sGOStorage.LookupEntry<GameObjectInfo>(targetEntry))
+                if (!sGOStorage.LookupEntry<GameObjectInfo>(itr->targetEntry))
                 {
-                    sLog.outErrorDb("Table `spell_script_target`: gameobject template entry %u does not exist.",targetEntry);
+                    sLog.outErrorDb("Table `spell_script_target`: gameobject template entry %u does not exist.", itr->targetEntry);
+                    sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                     continue;
                 }
                 break;
             }
             default:
-                if (!targetEntry)
+                if (!itr->targetEntry)
                 {
-                    sLog.outErrorDb("Table `spell_script_target`: target entry == 0 for not GO target type (%u).",type);
+                    sLog.outErrorDb("Table `spell_script_target`: target entry == 0 for not GO target type (%u).", itr->type);
+                    sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                     continue;
                 }
-                if (const CreatureInfo* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(targetEntry))
+                if (const CreatureInfo* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(itr->targetEntry))
                 {
-                    if (spellId == 30427 && !cInfo->SkinLootId)
+                    if (itr->spellId == 30427 && !cInfo->SkinLootId)
                     {
                         sLog.outErrorDb("Table `spell_script_target` has creature %u as a target of spellid 30427, but this creature has no skinlootid. Gas extraction will not work!", cInfo->Entry);
+                        sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                         continue;
                     }
                 }
                 else
                 {
-                    sLog.outErrorDb("Table `spell_script_target`: creature template entry %u does not exist.",targetEntry);
+                    sLog.outErrorDb("Table `spell_script_target`: creature template entry %u does not exist.", itr->targetEntry);
+                    sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                     continue;
                 }
                 break;
         }
-
-        mSpellScriptTarget.insert(SpellScriptTarget::value_type(spellId,SpellTargetEntry(SpellTargetType(type),targetEntry)));
-
-        ++count;
-    } while (result->NextRow());
-
-    delete result;
+    }
 
     // Check all spells
-    /* Disabled (lot errors at this moment)
-    for(uint32 i = 1; i < sSpellStore.nCount; ++i)
+    if (!sLog.HasLogFilter(LOG_FILTER_DB_STRICTED_CHECK))
     {
-        SpellEntry const * spellInfo = sSpellStore.LookupEntry(i);
-        if(!spellInfo)
-            continue;
-
-        bool found = false;
-        for(int j = 0; j < MAX_EFFECT_INDEX; ++j)
+        for (uint32 i = 1; i < sSpellStore.GetNumRows(); ++i)
         {
-            if ( spellInfo->EffectImplicitTargetA[j] == TARGET_SCRIPT || spellInfo->EffectImplicitTargetA[j] != TARGET_SELF && spellInfo->EffectImplicitTargetB[j] == TARGET_SCRIPT )
+            SpellEntry const* spellInfo = sSpellStore.LookupEntry(i);
+            if (!spellInfo)
+                continue;
+
+            for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
             {
-                SpellScriptTarget::const_iterator lower = GetBeginSpellScriptTarget(spellInfo->Id);
-                SpellScriptTarget::const_iterator upper = GetEndSpellScriptTarget(spellInfo->Id);
-                if (lower==upper)
+                if (spellInfo->Effect[j] && (spellInfo->EffectImplicitTargetA[j] == TARGET_SCRIPT ||
+                                             (spellInfo->EffectImplicitTargetA[j] != TARGET_SELF && spellInfo->EffectImplicitTargetB[j] == TARGET_SCRIPT)))
                 {
-                    sLog.outErrorDb("Spell (ID: %u) has effect EffectImplicitTargetA/EffectImplicitTargetB = %u (TARGET_SCRIPT), but does not have record in `spell_script_target`",spellInfo->Id,TARGET_SCRIPT);
-                    break;                                  // effects of spell
+                    SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(i);
+                    if (bounds.first == bounds.second)
+                    {
+                        sLog.outErrorDb("Spell (ID: %u) has effect EffectImplicitTargetA/EffectImplicitTargetB = %u (TARGET_SCRIPT), but does not have record in `spell_script_target`", spellInfo->Id, TARGET_SCRIPT);
+                        break;                                  // effects of spell
+                    }
                 }
             }
         }
     }
-    */
-
-    sLog.outString();
-    sLog.outString(">> Loaded %u Spell Script Targets", count);
 }
 
 void SpellMgr::LoadSpellPetAuras()
@@ -3342,13 +3829,6 @@ void SpellMgr::LoadSpellPetAuras()
             {
                 sLog.outErrorDb("Spell %u listed in `spell_pet_auras` does not exist", spell);
                 continue;
-            }
-
-            if (spellInfo->Effect[eff] != SPELL_EFFECT_DUMMY &&
-               (spellInfo->Effect[eff] != SPELL_EFFECT_APPLY_AURA ||
-                spellInfo->EffectApplyAuraName[eff] != SPELL_AURA_DUMMY))
-            {
-                DEBUG_LOG("PetAuras load: Spell %u listed in `spell_pet_auras` does not have dummy aura or dummy effect", spell);
             }
 
             SpellEntry const* spellInfo2 = sSpellStore.LookupEntry(aura);
@@ -3469,7 +3949,7 @@ void SpellMgr::LoadPetDefaultSpells()
     uint32 countCreature = 0;
     uint32 countData = 0;
 
-    for(uint32 i = 0; i < sCreatureStorage.MaxEntry; ++i )
+    for (uint32 i = 0; i < sCreatureStorage.GetMaxEntry(); ++i)
     {
         CreatureInfo const* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(i);
         if(!cInfo)
@@ -3519,10 +3999,19 @@ void SpellMgr::LoadPetDefaultSpells()
                 int32 petSpellsId = cInfo->Entry;
                 if (mPetDefaultSpellsMap.find(cInfo->Entry) != mPetDefaultSpellsMap.end())
                     continue;
-
                 PetDefaultSpellsEntry petDefSpells;
-                for(int j = 0; j < MAX_CREATURE_SPELL_DATA_SLOT; ++j)
-                    petDefSpells.spellid[j] = cInfo->spells[j];
+
+                CreatureSpellsList const* spellList = sObjectMgr.GetCreatureSpells(cInfo->Entry);
+                if (spellList && !spellList->empty())
+                {
+                    for (CreatureSpellsList::const_iterator itr = spellList->begin(); (itr != spellList->end() && itr->first < MAX_CREATURE_SPELL_DATA_SLOT); ++itr)
+                    {
+                        if (itr->second.disabled || !itr->second.spell)
+                            petDefSpells.spellid[itr->first] = 0;
+                        else
+                            petDefSpells.spellid[itr->first] = itr->second.spell;
+                    }
+                }
 
                 if (LoadPetDefaultSpells_helper(cInfo, petDefSpells))
                 {
@@ -4435,7 +4924,7 @@ void SpellMgr::CheckUsedSpells(char const* table)
             {
                 if (familyMask == ClassFamilyMask())
                 {
-                    if (spellEntry->SpellFamilyFlags)
+                    if (spellEntry->GetSpellFamilyFlags())
                     {
                         sLog.outError("Spell %u '%s' not fit to (" I64FMT "," I32FMT ") but used in %s.",
                             spell, name.c_str(), familyMask.Flags, familyMask.Flags2, code.c_str());
@@ -4521,7 +5010,7 @@ void SpellMgr::CheckUsedSpells(char const* table)
                 {
                     if (familyMask == ClassFamilyMask())
                     {
-                        if (spellEntry->SpellFamilyFlags)
+                        if (spellEntry->GetSpellFamilyFlags())
                             continue;
                     }
                     else
@@ -4605,10 +5094,10 @@ DiminishingGroup GetDiminishingReturnsGroupForSpell(SpellEntry const* spellproto
         case SPELLFAMILY_ROGUE:
         {
             // Blind
-            if (spellproto->SpellFamilyFlags.test<CF_ROGUE_BLIND>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_ROGUE_BLIND>())
                 return DIMINISHING_FEAR_CHARM_BLIND;
             // Cheap Shot
-            else if (spellproto->SpellFamilyFlags.test<CF_ROGUE_CHEAP_SHOT>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_ROGUE_CHEAP_SHOT>())
                 return DIMINISHING_CHEAPSHOT_POUNCE;
             // Crippling poison - Limit to 10 seconds in PvP (No SpellFamilyFlags)
             else if (spellproto->SpellIconID == 163)
@@ -4624,44 +5113,51 @@ DiminishingGroup GetDiminishingReturnsGroupForSpell(SpellEntry const* spellproto
             if  (spellproto->SpellIconID == 180 || spellproto->SpellIconID == 1721)
                 return DIMINISHING_DISORIENT;
             // Hunters Mark - limit to 2 minutes in PvP
-            else if (spellproto->SpellFamilyFlags.test<CF_HUNTER_HUNTERS_MARK>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_HUNTER_HUNTERS_MARK>())
                 return DIMINISHING_LIMITONLY;
             break;
         }
         case SPELLFAMILY_PALADIN:
         {
             // Judgement of Justice - limit to 10 seconds in PvP
-            if (spellproto->SpellFamilyFlags.test<CF_PALADIN_JUDGEMENT_OF_JUSTICE>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_PALADIN_JUDGEMENT_OF_JUSTICE>())
                 return DIMINISHING_LIMITONLY;
             // Turn Evil
-            else if (spellproto->SpellFamilyFlags.test<CF_PALADIN_TURN_EVIL>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_PALADIN_TURN_EVIL>())
                 return DIMINISHING_FEAR_CHARM_BLIND;
+            break;
+        }
+        case SPELLFAMILY_SHAMAN:
+        {
+            // Earthgrab
+            if (spellproto->GetSpellFamilyFlags().test<CF_SHAMAN_EARTHGRAB>())
+                return DIMINISHING_LIMITONLY;
             break;
         }
         case SPELLFAMILY_WARLOCK:
         {
             // Curses/etc
-            if (spellproto->SpellFamilyFlags.test<CF_WARLOCK_MISC_DEBUFFS, CF_WARLOCK_CURSE_OF_THE_ELEMENTS>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_WARLOCK_MISC_DEBUFFS, CF_WARLOCK_CURSE_OF_THE_ELEMENTS>())
                 return DIMINISHING_LIMITONLY;
             break;
         }
         case SPELLFAMILY_DRUID:
         {
             // Cyclone
-            if (spellproto->SpellFamilyFlags.test<CF_DRUID_CYCLONE>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_DRUID_CYCLONE>())
                 return DIMINISHING_CYCLONE;
             // Pounce
-            else if (spellproto->SpellFamilyFlags.test<CF_DRUID_POUNCE>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_DRUID_POUNCE>())
                 return DIMINISHING_CHEAPSHOT_POUNCE;
             // Faerie Fire
-            else if (spellproto->SpellFamilyFlags.test<CF_DRUID_FAERIE_FIRE>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_DRUID_FAERIE_FIRE>())
                 return DIMINISHING_LIMITONLY;
             break;
         }
         case SPELLFAMILY_WARRIOR:
         {
             // Hamstring - limit duration to 10s in PvP
-            if (spellproto->SpellFamilyFlags.test<CF_WARRIOR_HAMSTRING>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_WARRIOR_HAMSTRING>())
                 return DIMINISHING_LIMITONLY;
             // Charge - since 3.1.0
             if (spellproto->Id == 7922)
@@ -4728,40 +5224,40 @@ int32 GetDiminishingReturnsLimitDuration(DiminishingGroup group, SpellEntry cons
         case SPELLFAMILY_WARLOCK:
         {
             // Curse of the Elements - limit to 2 minutes in PvP
-            if (spellproto->SpellFamilyFlags.test<CF_WARLOCK_CURSE_OF_THE_ELEMENTS>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_WARLOCK_CURSE_OF_THE_ELEMENTS>())
                 return 120000;
             // Banish - limit to 6 seconds in PvP (3.1)
-            else if (spellproto->SpellFamilyFlags.test<CF_WARLOCK_BANISH>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_WARLOCK_BANISH>())
                 return 6000;
             // Curse of agony - limit to 24 seconds in PvP (?)
-            else if (spellproto->SpellFamilyFlags.test<CF_WARLOCK_CURSE_OF_AGONY>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_WARLOCK_CURSE_OF_AGONY>())
                 return 24000;
             // Shadow embrace - limit to 12 seconds in PvP (?)
-            else if (spellproto->SpellFamilyFlags.test<CF_WARLOCK_MISC_DEBUFFS>() && spellproto->SpellIconID == 2209)
+            else if (spellproto->GetSpellFamilyFlags().test<CF_WARLOCK_MISC_DEBUFFS>() && spellproto->SpellIconID == 2209)
                 return 12000;
             break;
         }
         case SPELLFAMILY_HUNTER:
         {
             // Wyvern Sting
-            if (spellproto->SpellFamilyFlags.test<CF_HUNTER_WYVERN_STING2>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_HUNTER_WYVERN_STING2>())
                 return 6000;
             // Hunters Mark - limit to 2 minutes in PvP
-            else if (spellproto->SpellFamilyFlags.test<CF_HUNTER_HUNTERS_MARK>())
+            else if (spellproto->GetSpellFamilyFlags().test<CF_HUNTER_HUNTERS_MARK>())
                 return 120000;
             break;
         }
         case SPELLFAMILY_PALADIN:
         {
             // Repentance - limit to 6 seconds in PvP
-            if (spellproto->SpellFamilyFlags.test<CF_PALADIN_REPENTANCE>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_PALADIN_REPENTANCE>())
                 return 6000;
             break;
         }
         case SPELLFAMILY_DRUID:
         {
             // Faerie Fire - limit to 40 seconds in PvP (3.1)
-            if (spellproto->SpellFamilyFlags.test<CF_DRUID_FAERIE_FIRE>())
+            if (spellproto->GetSpellFamilyFlags().test<CF_DRUID_FAERIE_FIRE>())
                 return 40000;
             break;
         }
@@ -4833,10 +5329,10 @@ bool SpellArea::IsFitToRequirements(Player const* player, uint32 newZone, uint32
             return false;
     }
 
-    if (raceMask)
+    if (player && raceMask)
     {
         // not in expected race
-        if(!player || !(raceMask & player->getRaceMask()))
+        if (!(raceMask & player->getRaceMask()))
             return false;
     }
 
@@ -4962,10 +5458,13 @@ SpellPreferredTargetType GetPreferredTargetForSpell(SpellEntry const* spellInfo)
         return positive ? SPELL_PREFERRED_TARGET_SELF : SPELL_PREFERRED_TARGET_VICTIM;
 
     uint32 firstTarget = spellInfo->EffectImplicitTargetA[EFFECT_INDEX_0];
+    uint32 firstTargetB = spellInfo->EffectImplicitTargetB[EFFECT_INDEX_0];
+
+    if (firstTarget == TARGET_NONE && firstTargetB == TARGET_NONE)
+        return SPELL_PREFERRED_TARGET_SELF;
 
     if (!IsSpellCauseDamage(spellInfo) && firstTarget == TARGET_DUELVSPLAYER)
         return SPELL_PREFERRED_TARGET_RANDOM;
-
     if (positive)
     {
         switch (firstTarget)
@@ -4998,4 +5497,63 @@ SpellPreferredTargetType GetPreferredTargetForSpell(SpellEntry const* spellInfo)
     }
 
     return SPELL_PREFERRED_TARGET_SELF;
+}
+
+static char* SPELL_DBC_SPELL      = "reconstructed by spell_dbc spell";
+
+struct SpellDbcLoader : public SQLStorageLoaderBase<SpellDbcLoader, SQLHashStorage>
+{
+    template<class S, class D>
+    void default_fill(uint32 field_pos, S src, D &dst)
+    {
+        dst = D(src);
+    }
+
+    void default_fill_to_str(uint32 field_pos, char const* /*src*/, char * & dst)
+    {
+        if (field_pos == LOADED_SPELLDBC_FIELD_POS_SPELLNAME_0)
+        {
+            dst = SPELL_DBC_SPELL;
+        }
+        else
+        {
+            dst = new char[1];
+            *dst = 0;
+        }
+    }
+};
+
+void SpellMgr::LoadSpellDbc()
+{
+    SpellDbcLoader loader;
+    loader.Load(sSpellDbcTemplate);
+
+    sLog.outString(">> Loaded %u spell definitions", sSpellDbcTemplate.GetRecordCount());
+    sLog.outString();
+
+    for (uint32 i = 1; i < sSpellDbcTemplate.GetMaxEntry(); ++i)
+    {
+        // check data correctness
+        SpellEntry const* spellEntry = sSpellDbcTemplate.LookupEntry<SpellEntry>(i);
+        if (!spellEntry)
+            continue;
+
+        // insert serverside spell data
+        if (sSpellStore.GetNumRows() <= i)
+        {
+            sLog.outErrorDb("SpellMgr::LoadSpellDbc Loading Spell Template for spell %u, index out of bounds (max = %u)", i, sSpellStore.GetNumRows());
+            continue;
+        }
+        else if (/*SpellEntry const* originalSpellEntry = */sSpellStore.LookupEntry(i))
+        {
+            sLog.outDetail("SpellMgr::LoadSpellDbc Index %u already exists in SpellStorage! replacing on spell_dbc data fields!", i);
+            sSpellStore.EraseEntry(i);
+            sSpellStore.InsertEntry(const_cast<SpellEntry*>(spellEntry), i);
+        }
+        else
+        {
+            sLog.outDetail("SpellMgr::LoadSpellDbc reconstructed spell %u inserted in SpellStorage", spellEntry->Id);
+            sSpellStore.InsertEntry(const_cast<SpellEntry*>(spellEntry), i);
+        }
+    }
 }

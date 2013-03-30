@@ -33,7 +33,7 @@ void PointMovementGenerator<T>::Initialize(T &unit)
         unit.StopMoving();
 
     unit.addUnitState(UNIT_STAT_ROAMING|UNIT_STAT_ROAMING_MOVE);
-    Movement::MoveSplineInit init(unit);
+    Movement::MoveSplineInit<Unit*> init(unit);
     init.MoveTo(i_x, i_y, i_z, m_generatePath);
     init.Launch();
 }
@@ -50,6 +50,12 @@ void PointMovementGenerator<T>::Finalize(T &unit)
 template<class T>
 void PointMovementGenerator<T>::Interrupt(T &unit)
 {
+    if (!unit.movespline->Finalized())
+    {
+        Location loc = unit.movespline->ComputePosition();
+        unit.SetPosition(loc.x,loc.y,loc.z,loc.orientation);
+        unit.movespline->_Interrupt();
+    }
     unit.clearUnitState(UNIT_STAT_ROAMING|UNIT_STAT_ROAMING_MOVE);
 }
 
@@ -132,4 +138,33 @@ void EffectMovementGenerator::Finalize(Unit &unit)
 
     if (((Creature&)unit).AI() && unit.movespline->Finalized())
         ((Creature&)unit).AI()->MovementInform(EFFECT_MOTION_TYPE, m_Id);
+}
+
+bool EjectMovementGenerator::Update(Unit &unit, const uint32 &)
+{
+    return !unit.movespline->Finalized();
+}
+
+void EjectMovementGenerator::Initialize(Unit &unit)
+{
+    if (unit.GetTypeId() == TYPEID_PLAYER)
+        ((Player&)unit).SetMover(&unit);
+}
+
+void EjectMovementGenerator::Finalize(Unit &unit)
+{
+    if (unit.GetTypeId() == TYPEID_UNIT && ((Creature&)unit).AI() && unit.movespline->Finalized())
+        ((Creature&)unit).AI()->MovementInform(EFFECT_MOTION_TYPE, m_Id);
+
+    if (unit.hasUnitState(UNIT_STAT_ON_VEHICLE))
+    {
+        unit.clearUnitState(UNIT_STAT_ON_VEHICLE);
+        unit.m_movementInfo.ClearTransportData();
+
+        if (unit.GetTypeId() == TYPEID_PLAYER)
+            ((Player&)unit).SetMover(&unit);
+    }
+
+    unit.m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
+    unit.StopMoving();
 }

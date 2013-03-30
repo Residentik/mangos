@@ -85,8 +85,8 @@ struct CreatureLinkingInfo
     uint32 mapId;
     uint32 masterId;
     uint32 masterDBGuid;
-    uint16 linkingFlag:16;
-    uint16 searchRange:16;
+    uint16 linkingFlag: 16;
+    uint16 searchRange: 16;
 };
 
 /**
@@ -160,12 +160,11 @@ class CreatureLinkingHolder
         bool TryFollowMaster(Creature* pCreature);
 
     private:
-        typedef std::list<ObjectGuid> GuidList;
         // Structure associated to a master (entry case)
         struct InfoAndGuids
         {
-            uint16 linkingFlag:16;
-            uint16 searchRange:16;
+            uint16 linkingFlag: 16;
+            uint16 searchRange: 16;
             GuidList linkedGuids;
         };
         // Structure associated to a master (guid case)

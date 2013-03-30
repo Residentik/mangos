@@ -19,6 +19,7 @@
 #include "InstanceData.h"
 #include "Database/DatabaseEnv.h"
 #include "Map.h"
+#include "MapPersistentStateMgr.h"
 #include "Log.h"
 
 void InstanceData::SaveToDB()
@@ -39,16 +40,34 @@ void InstanceData::SaveToDB()
         CharacterDatabase.PExecute("UPDATE world SET data = '%s' WHERE map = '%u'", data.c_str(), instance->GetId());
 }
 
-bool InstanceData::CheckAchievementCriteriaMeet( uint32 criteria_id, Player const* /*source*/, Unit const* /*target*/ /*= NULL*/, uint32 /*miscvalue1*/ /*= 0*/ )
+bool InstanceData::CheckAchievementCriteriaMeet(uint32 criteria_id, Player const* /*source*/, Unit const* /*target*/ /*= NULL*/, uint32 /*miscvalue1*/ /*= 0*/)
 {
     sLog.outError("Achievement system call InstanceData::CheckAchievementCriteriaMeet but instance script for map %u not have implementation for achievement criteria %u",
-        instance->GetId(),criteria_id);
+                  instance->GetId(), criteria_id);
     return false;
 }
 
-bool InstanceData::CheckConditionCriteriaMeet(Player const* /*source*/, uint32 map_id, uint32 instance_condition_id)
+bool InstanceData::CheckConditionCriteriaMeet(Player const* /*source*/, uint32 instance_condition_id, WorldObject const* /*conditionSource*/, ConditionSource conditionSourceType)
 {
-    sLog.outError("Condition system call InstanceData::CheckConditionCriteriaMeet but instance script for map %u not have implementation for player condition criteria with internal id %u for map %u",
-        instance->GetId(), instance_condition_id, map_id);
+    sLog.outError("Condition system call InstanceData::CheckConditionCriteriaMeet but instance script for map %u not have implementation for player condition criteria with internal id %u (called from %u)",
+                  instance->GetId(), instance_condition_id, uint32(conditionSourceType));
     return false;
+}
+
+void InstanceData::UpdateSpecialEncounterState(EncounterFrameCommand command, ObjectGuid linkedGuid, uint8 data1, uint8 data2)
+{
+    DungeonPersistentState* state = ((DungeonMap*)instance)->GetPersistanceState();
+    if (!state)
+        return;
+
+    state->UpdateSpecialEncounterState(command, linkedGuid, data1, data2);
+}
+
+void InstanceData::SendSpecialEncounterState(ObjectGuid linkedGuid)
+{
+    DungeonPersistentState* state = ((DungeonMap*)instance)->GetPersistanceState();
+    if (!state)
+        return;
+
+    state->SendSpecialEncounterState(linkedGuid);
 }

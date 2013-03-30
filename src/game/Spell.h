@@ -108,8 +108,8 @@ class SpellCastTargets
         SpellCastTargets();
         ~SpellCastTargets();
 
-        void read( ByteBuffer& data, Unit *caster );
-        void write( ByteBuffer& data ) const;
+        void read(ByteBuffer& data, Unit* caster );
+        void write(ByteBuffer& data ) const;
 
         SpellCastTargetsReader ReadForCaster(Unit* caster) { return SpellCastTargetsReader(*this,caster); }
 
@@ -130,13 +130,8 @@ class SpellCastTargets
 
             m_itemTargetEntry  = target.m_itemTargetEntry;
 
-            m_srcX = target.m_srcX;
-            m_srcY = target.m_srcY;
-            m_srcZ = target.m_srcZ;
-
-            m_destX = target.m_destX;
-            m_destY = target.m_destY;
-            m_destZ = target.m_destZ;
+            m_src       = target.m_src;
+            m_dest      = target.m_dest;
 
             m_strTarget = target.m_strTarget;
 
@@ -148,24 +143,34 @@ class SpellCastTargets
             return *this;
         }
 
+        void setUnitTarget(Unit* target);
         ObjectGuid getUnitTargetGuid() const { return m_unitTargetGUID; }
-        Unit *getUnitTarget() const { return m_unitTarget; }
-        void setUnitTarget(Unit *target);
-        void setDestination(float x, float y, float z);
-        void setSource(float x, float y, float z);
+        Unit* getUnitTarget() const { return m_unitTarget; }
 
+        void setDestination(WorldLocation const& dest);
+        void setSource(WorldLocation const& src);
+
+        WorldLocation const& getDestination() const { return m_dest; }
+        WorldLocation const& getSource() const { return m_src; }
+
+        bool HasLocation() const;
+
+        WorldLocation const& GetLocation() const;
+
+        void setGOTarget(GameObject* target);
         ObjectGuid getGOTargetGuid() const { return m_GOTargetGUID; }
-        GameObject *getGOTarget() const { return m_GOTarget; }
-        void setGOTarget(GameObject *target);
+        GameObject* getGOTarget() const { return m_GOTarget; }
 
-        ObjectGuid getCorpseTargetGuid() const { return m_CorpseTargetGUID; }
         void setCorpseTarget(Corpse* corpse);
+        ObjectGuid getCorpseTargetGuid() const { return m_CorpseTargetGUID; }
 
+        void setItemTarget(Item* item);
         ObjectGuid getItemTargetGuid() const { return m_itemTargetGUID; }
         Item* getItemTarget() const { return m_itemTarget; }
         uint32 getItemTargetEntry() const { return m_itemTargetEntry; }
-        void setItemTarget(Item* item);
+
         void setTradeItemTarget(Player* caster);
+
         void updateTradeSlotItem()
         {
             if(m_itemTarget && (m_targetMask & TARGET_FLAG_TRADE_ITEM))
@@ -179,20 +184,21 @@ class SpellCastTargets
 
         void Update(Unit* caster);
 
-        float m_srcX, m_srcY, m_srcZ;
-        float m_destX, m_destY, m_destZ;
         std::string m_strTarget;
 
         float GetElevation() const { return m_elevation; }
         float GetSpeed()     const { return m_speed; }
 
+        void  SetElevation(float elevation) { m_elevation = elevation; }
+        void  SetSpeed(float speed)         { m_speed = speed; }
+
         uint32 m_targetMask;
 
     private:
         // objects (can be used at spell creating and after Update at casting
-        Unit *m_unitTarget;
-        GameObject *m_GOTarget;
-        Item *m_itemTarget;
+        Unit*       m_unitTarget;
+        GameObject* m_GOTarget;
+        Item*       m_itemTarget;
 
         // object GUID/etc, can be used always
         ObjectGuid m_unitTargetGUID;
@@ -202,6 +208,8 @@ class SpellCastTargets
         ObjectGuid m_srcTransportGUID;
         ObjectGuid m_destTransportGUID;
         uint32 m_itemTargetEntry;
+
+        WorldLocation m_src, m_dest;
 
         float m_elevation, m_speed;
 };
@@ -356,7 +364,7 @@ class Spell
         void EffectKillCreditPersonal(SpellEffectIndex eff_idx);
         void EffectKillCreditGroup(SpellEffectIndex eff_idx);
         void EffectQuestFail(SpellEffectIndex eff_idx);
-        void EffectQuestStart(SpellEffectIndex eff_idx);
+        void EffectQuestOffer(SpellEffectIndex eff_idx);
         void EffectActivateRune(SpellEffectIndex eff_idx);
         void EffectSuspendGravity(SpellEffectIndex eff_idx);
         void EffectUntrainTalents(SpellEffectIndex eff_idx);
@@ -374,11 +382,12 @@ class Spell
 
         void EffectFriendSummon(SpellEffectIndex eff_idx);
         void EffectServerSide(SpellEffectIndex eff_idx);
+        void EffectKnockBackFromPosition(SpellEffectIndex eff_idx);
 
         Spell(Unit* caster, SpellEntry const *info, bool triggered, ObjectGuid originalCasterGUID = ObjectGuid(), SpellEntry const* triggeredBy = NULL);
         ~Spell();
 
-        void prepare(SpellCastTargets const* targets, Aura* triggeredByAura = NULL);
+        void prepare(SpellCastTargets const* targets, Aura const* triggeredByAura = NULL);
 
         void cancel(bool force = false);
 
@@ -404,6 +413,7 @@ class Spell
         SpellCastResult CheckPower();
         SpellCastResult CheckOrTakeRunePower(bool take);
         SpellCastResult CheckCasterAuras() const;
+        SpellCastResult CheckCastTargets() const;
 
         int32 CalculateDamage(SpellEffectIndex i, Unit* target) { return m_caster->CalculateSpellDamage(target, m_spellInfo, i, &m_currentBasePoints[i]); }
         static int32 CalculatePowerCost(SpellEntry const* spellInfo, Unit* caster, Spell const* spell = NULL, Item* castItem = NULL);
@@ -436,13 +446,16 @@ class Spell
         void FillRaidOrPartyManaPriorityTargets(UnitList &targetUnitMap, Unit* member, Unit* center, float radius, uint32 count, bool raid, bool withPets, bool withcaster);
         void FillRaidOrPartyHealthPriorityTargets(UnitList &targetUnitMap, Unit* member, Unit* center, float radius, uint32 count, bool raid, bool withPets, bool withcaster);
 
-        template<typename T> WorldObject* FindCorpseUsing();
+        // Returns a target that was filled by SPELL_SCRIPT_TARGET (or selected victim) Can return NULL
+        Unit* GetPrefilledUnitTargetOrUnitTarget(SpellEffectIndex effIndex) const;
+
+        template<typename T> WorldObject* FindCorpseUsing(uint32 corpseTypeMask);
 
         bool CheckTarget( Unit* target, SpellEffectIndex eff );
-        bool CheckTargetBeforeLimitation(Unit* target);
+        bool CheckTargetBeforeLimitation(Unit* target, SpellEffectIndex eff);
         SpellCastResult CanAutoCast(Unit* target);
 
-        static void MANGOS_DLL_SPEC SendCastResult(Player* caster, SpellEntry const* spellInfo, uint8 cast_count, SpellCastResult result);
+        static void MANGOS_DLL_SPEC SendCastResult(Player* caster, SpellEntry const* spellInfo, uint8 cast_count, SpellCastResult result, bool isPetCastResult = false);
         void SendCastResult(SpellCastResult result);
         void SendSpellStart();
         void SendSpellGo();
@@ -456,7 +469,6 @@ class Spell
         void SendChannelUpdate(uint32 time);
         void SendChannelStart(uint32 duration);
         void SendResurrectRequest(Player* target);
-        void SendPlaySpellVisual(uint32 SpellID);
 
 
         void HandleEffects(Unit *pUnitTarget, Item *pItemTarget, GameObject *pGOTarget, SpellEffectIndex i);
@@ -491,9 +503,11 @@ class Spell
         bool IsDeletable() const { return !m_referencedFromCurrentSpell && !m_executedCurrently; }
         void SetReferencedFromCurrent(bool yes) { m_referencedFromCurrentSpell = yes; }
         void SetExecutedCurrently(bool yes) { m_executedCurrently = yes; }
+
         uint64 GetDelayStart() const { return m_delayStart; }
         void SetDelayStart(uint64 m_time) { m_delayStart = m_time; }
         uint64 GetDelayMoment() const { return m_delayMoment; }
+        float GetBaseSpellSpeed();
 
         bool IsNeedSendToClient() const;                    // use for hide spell cast for client in case when cast not have client side affect (animation or log entries)
         bool IsTriggeredSpellWithRedundentData() const;     // use for ignore some spell data for triggered spells like cast time, some triggered spells have redundent copy data from main spell for client use purpose
@@ -510,11 +524,12 @@ class Spell
         // m_originalCasterGUID can store GO guid, and in this case this is visual caster
         WorldObject* GetCastingObject() const;
 
+        // Unstead of GetAffectiveCaster() not return NULL if original caster is GameObject.
+        Unit* GetAffectiveUnitCaster() const { return (m_originalCaster ? m_originalCaster : m_caster); }
+
         int32 GetPowerCost() const { return m_powerCost; }
 
         void UpdatePointers();                              // must be used at call Spell code after time delay (non triggered spell cast/update spell call/etc)
-
-        bool CheckTargetCreatureType(Unit* target) const;
 
         void AddTriggeredSpell(SpellEntry const* spellInfo) { m_TriggerSpells.push_back(spellInfo); }
         void AddPrecastSpell(SpellEntry const* spellInfo) { m_preCastSpells.push_back(spellInfo); }
@@ -551,7 +566,6 @@ class Spell
         int32 m_powerCost;                                  // Calculated spell cost     initialized only in Spell::prepare
         int32 m_casttime;                                   // Calculated spell cast time initialized only in Spell::prepare
         int32 m_duration;
-        bool m_canReflect;                                  // can reflect this spell?
         uint8 m_spellFlags;                                 // for spells whose target was changed in cast i.e. due to reflect
         bool m_autoRepeat;
         uint8 m_runesState;
@@ -645,11 +659,12 @@ class Spell
         GOTargetList   m_UniqueGOTargetInfo;
         ItemTargetList m_UniqueItemInfo;
 
+        void AddTarget(ObjectGuid targetGuid, SpellEffectIndex effIndex);
+
         void AddUnitTarget(Unit* target, SpellEffectIndex effIndex);
-        void AddUnitTarget(ObjectGuid unitGuid, SpellEffectIndex effIndex);
         void AddGOTarget(GameObject* target, SpellEffectIndex effIndex);
-        void AddGOTarget(ObjectGuid goGuid, SpellEffectIndex effIndex);
         void AddItemTarget(Item* target, SpellEffectIndex effIndex);
+
         void DoAllEffectOnTarget(TargetInfo *target);
         void HandleDelayedSpellLaunch(TargetInfo *target);
         void InitializeDamageMultipliers();
@@ -719,7 +734,7 @@ namespace MaNGOS
                 if( i_originalCaster->IsFriendlyTo(pPlayer) )
                     continue;
 
-                if( pPlayer->IsWithinDist3d(i_spell.m_targets.m_destX, i_spell.m_targets.m_destY, i_spell.m_targets.m_destZ,i_radius))
+                if( pPlayer->IsWithinDist3d(i_spell.m_targets.getDestination(),i_radius))
                     i_data.push_back(pPlayer);
             }
         }
@@ -728,7 +743,7 @@ namespace MaNGOS
 
     struct MANGOS_DLL_DECL SpellNotifierCreatureAndPlayer
     {
-        Spell::UnitList *i_data;
+        Spell::UnitList* i_data;
         Spell &i_spell;
         SpellNotifyPushType i_push_type;
         float i_radius;
@@ -736,20 +751,23 @@ namespace MaNGOS
         WorldObject* i_originalCaster;
         WorldObject* i_castingObject;
         bool i_playerControlled;
-        float i_centerX;
-        float i_centerY;
-        float i_centerZ;
+        WorldLocation i_center;
 
-        float GetCenterX() const { return i_centerX; }
-        float GetCenterY() const { return i_centerY; }
+        WorldLocation const& GetCenter() const { return i_center; }
+
+        float GetCenterX() const { return i_center.x; }
+        float GetCenterY() const { return i_center.y; }
+        float GetCenterZ() const { return i_center.z; }
 
         SpellNotifierCreatureAndPlayer(Spell &spell, Spell::UnitList &data, float radius, SpellNotifyPushType type,
             SpellTargets TargetType = SPELL_TARGETS_NOT_FRIENDLY, WorldObject* originalCaster = NULL)
             : i_data(&data), i_spell(spell), i_push_type(type), i_radius(radius), i_TargetType(TargetType),
-            i_originalCaster(originalCaster), i_castingObject(i_spell.GetCastingObject())
+            i_originalCaster(originalCaster), i_castingObject(i_spell.GetCastingObject()), i_center(WorldLocation())
         {
             if (!i_originalCaster)
                 i_originalCaster = i_spell.GetAffectiveCasterObject();
+            if (!i_castingObject)
+                i_castingObject = i_spell.m_caster;
             i_playerControlled = i_originalCaster  ? i_originalCaster->IsControlledByPlayer() : false;
 
             switch(i_push_type)
@@ -762,43 +780,21 @@ namespace MaNGOS
                 case PUSH_SELF_CENTER:
                     if (i_castingObject)
                     {
-                        i_centerX = i_castingObject->GetPositionX();
-                        i_centerY = i_castingObject->GetPositionY();
+                        i_center =  WorldLocation(i_castingObject->GetPosition());
                     }
                     break;
                 case PUSH_DEST_CENTER:
-                    if (i_spell.m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
-                    {
-                        i_centerX = i_spell.m_targets.m_destX;
-                        i_centerY = i_spell.m_targets.m_destY;
-                        i_centerZ = i_spell.m_targets.m_destZ;
-                    }
-                    else
-                    {
-                        i_centerX = i_spell.m_targets.m_srcX;
-                        i_centerY = i_spell.m_targets.m_srcY;
-                        i_centerZ = i_spell.m_targets.m_srcZ;
-                    }
-                    break;
                 case PUSH_INHERITED_CENTER:
                 {
-                    if ((i_spell.m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION) || (i_spell.m_targets.m_targetMask & TARGET_FLAG_UNIT))
-                    {
-                        i_centerX = i_spell.m_targets.m_destX;
-                        i_centerY = i_spell.m_targets.m_destY;
-                    }
-                    else if (i_spell.m_targets.m_targetMask & TARGET_FLAG_SOURCE_LOCATION)
-                    {
-                        i_centerX = i_spell.m_targets.m_srcX;
-                        i_centerY = i_spell.m_targets.m_srcY;
-                    }
+                    i_center = i_spell.m_targets.m_targetMask & TARGET_FLAG_SOURCE_LOCATION ?
+                                                i_spell.m_targets.getSource() :
+                                                i_spell.m_targets.getDestination();
                     break;
                 }
                 case PUSH_TARGET_CENTER:
                     if (Unit* target = i_spell.m_targets.getUnitTarget())
                     {
-                        i_centerX = target->GetPositionX();
-                        i_centerY = target->GetPositionY();
+                        i_center =  WorldLocation(target->GetPosition());
                     }
                     break;
                 default:
@@ -843,7 +839,7 @@ namespace MaNGOS
                         break;
                     case SPELL_TARGETS_AOE_DAMAGE:
                     {
-                        if (itr->getSource()->GetTypeId()==TYPEID_UNIT && ((Creature*)itr->getSource())->IsTotem())
+                        if (itr->getSource()->GetTypeId() == TYPEID_UNIT && ((Creature*)itr->getSource())->IsTotem())
                             continue;
 
                         if (i_playerControlled)
@@ -857,10 +853,10 @@ namespace MaNGOS
                                 continue;
                         }
 
-                        if (!itr->getSource()->IsVisibleTargetForAoEDamage(i_originalCaster, i_spell.m_spellInfo))
+                        if (!itr->getSource()->IsVisibleTargetForSpell(i_originalCaster, i_spell.m_spellInfo, &i_center))
                             continue;
+                        break;
                     }
-                    break;
                     case SPELL_TARGETS_ALL:
                         break;
                     default: continue;
@@ -894,19 +890,19 @@ namespace MaNGOS
                             i_data->push_back(itr->getSource());
                         break;
                     case PUSH_DEST_CENTER:
-                        if (itr->getSource()->IsWithinDist3d(i_centerX, i_centerY, i_centerZ, i_radius))
+                        if (itr->getSource()->IsWithinDist3d(GetCenter(), i_radius))
                             i_data->push_back(itr->getSource());
                         break;
                     case PUSH_INHERITED_CENTER:
                     {
                         if ((i_spell.m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION) || (i_spell.m_targets.m_targetMask & TARGET_FLAG_UNIT))
                         {
-                            if (itr->getSource()->IsWithinDist3d(i_spell.m_targets.m_destX, i_spell.m_targets.m_destY, i_spell.m_targets.m_destZ,i_radius))
+                            if (itr->getSource()->IsWithinDist3d(i_spell.m_targets.getDestination(), i_radius))
                                 i_data->push_back(itr->getSource());
                         }
                         else if (i_spell.m_targets.m_targetMask & TARGET_FLAG_SOURCE_LOCATION)
                         {
-                            if (itr->getSource()->IsWithinDist3d(i_spell.m_targets.m_srcX, i_spell.m_targets.m_srcY, i_spell.m_targets.m_srcZ, i_radius))
+                            if (itr->getSource()->IsWithinDist3d(i_spell.m_targets.getSource(), i_radius))
                                 i_data->push_back(itr->getSource());
                         }
                         break;
@@ -937,16 +933,4 @@ namespace MaNGOS
 
 typedef void(Spell::*pEffect)(SpellEffectIndex eff_idx);
 
-class SpellEvent : public BasicEvent
-{
-    public:
-        SpellEvent(Spell* spell);
-        virtual ~SpellEvent();
-
-        virtual bool Execute(uint64 e_time, uint32 p_time);
-        virtual void Abort(uint64 e_time);
-        virtual bool IsDeletable() const;
-    protected:
-        Spell* m_Spell;
-};
 #endif

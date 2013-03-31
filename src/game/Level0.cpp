@@ -93,7 +93,7 @@ bool ChatHandler::HandleRestoreCommand(char* /*args*/)
     Player* chr = m_session->GetPlayer();
 
     if (chr->isDead())
-         return;
+        return false;
 
     if (chr->isInCombat() || chr->IsInDuel(chr))
     {

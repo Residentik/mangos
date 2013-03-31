@@ -88,6 +88,24 @@ bool ChatHandler::HandleStartCommand(char* /*args*/)
     return true;
 }
 
+bool ChatHandler::HandleRestoreCommand(char* /*args*/)
+{
+    Player* chr = m_session->GetPlayer();
+
+    if (chr->isDead())
+         return;
+
+    if (chr->isInCombat() || chr->IsInDuel(chr))
+    {
+        SendSysMessage(LANG_YOU_IN_COMBAT);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    chr->CastSpell(chr, 80000, false);
+    return true;
+}
+
 bool ChatHandler::HandleServerInfoCommand(char* /*args*/)
 {
     uint32 activeClientsNum = sWorld.GetActiveSessionCount();

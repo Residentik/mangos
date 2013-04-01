@@ -1214,7 +1214,7 @@ bool ChatHandler::HandleSpellDisableCommand(char* args)
 
     sObjectMgr.LoadSpellDisabledEntrys();
 
-    SendGlobalSysMessage("DB table `spell_disabled` reloaded. ")
+    SendGlobalSysMessage("DB table `spell_disabled` reloaded. ");
 
    return true;
 }

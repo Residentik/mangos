@@ -4519,10 +4519,10 @@ bool ChatHandler::HandleLearnAllRecipesCommand(char* args)
 {
     //  Learns all recipes of specified profession and sets skill to max
     //  Example: .learn all_recipes enchanting
+    Player* target = m_session->GetPlayer();
+
     if (m_session->GetSecurity() > SEC_PLAYER)
-        Player* target = getSelectedPlayer();
-    else
-        Player* target = m_session->GetPlayer();
+        target = getSelectedPlayer();
 
     if (!target)
     {
